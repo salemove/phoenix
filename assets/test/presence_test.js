@@ -41,59 +41,28 @@ describe("syncState", () => {
   it("syncs empty state", () => {
     let newState = {u1: {metas: [{id: 1, phx_ref: "1"}]}}
     let state = {}
-    let stateBefore = clone(state)
     Presence.syncState(state, newState)
-    assert.deepEqual(state, stateBefore)
-
-    state = Presence.syncState(state, newState)
     assert.deepEqual(state, newState)
   })
 
-  it("onJoins new presences and onLeave's left presences", () => {
+  it("invokes onChange on joins and leaves", () => {
     let newState = fixtures.state()
     let state = {u4: {metas: [{id: 4, phx_ref: "4"}]}}
-    let joined = {}
-    let left = {}
-    let onJoin = (key, current, newPres) => {
-      joined[key] = {current: current, newPres: newPres}
-    }
-    let onLeave = (key, current, leftPres) => {
-      left[key] = {current: current, leftPres: leftPres}
-    }
-    let stateBefore = clone(state)
-    Presence.syncState(state, newState, onJoin, onLeave)
-    assert.deepEqual(state, stateBefore)
+    let changes = {}
 
-    state = Presence.syncState(state, newState, onJoin, onLeave)
-    assert.deepEqual(state, newState)
-    assert.deepEqual(joined, {
-      u1: {current: null, newPres: {metas: [{id: 1, phx_ref: "1"}]}},
-      u2: {current: null, newPres: {metas: [{id: 2, phx_ref: "2"}]}},
-      u3: {current: null, newPres: {metas: [{id: 3, phx_ref: "3"}]}}
-    })
-    assert.deepEqual(left, {
-      u4: {current: {metas: []}, leftPres: {metas: [{id: 4, phx_ref: "4"}]}}
-    })
-  })
+    let onChange = (key, oldPresence, newPresence) => {
+      changes[key] = {oldPresence: oldPresence, newPresence: newPresence}
+    }
 
-  it("onJoins only newly added metas", () => {
-    let newState = {u3: {metas: [{id: 3, phx_ref: "3"}, {id: 3, phx_ref: "3.new"}]}}
-    let state = {u3: {metas: [{id: 3, phx_ref: "3"}]}}
-    let joined = {}
-    let left = {}
-    let onJoin = (key, current, newPres) => {
-      joined[key] = {current: current, newPres: newPres}
-    }
-    let onLeave = (key, current, leftPres) => {
-      left[key] = {current: current, leftPres: leftPres}
-    }
-    state = Presence.syncState(state, newState, onJoin, onLeave)
+    Presence.syncState(state, newState, onChange)
     assert.deepEqual(state, newState)
-    assert.deepEqual(joined, {
-      u3: {current: {metas: [{id: 3, phx_ref: "3"}]},
-           newPres: {metas: [{id: 3, phx_ref: "3"}, {id: 3, phx_ref: "3.new"}]}}
+
+    assert.deepEqual(changes, {
+      u1: {oldPresence: null, newPresence: {metas: [{id: 1, phx_ref: "1"}]}},
+      u2: {oldPresence: null, newPresence: {metas: [{id: 2, phx_ref: "2"}]}},
+      u3: {oldPresence: null, newPresence: {metas: [{id: 3, phx_ref: "3"}]}},
+      u4: {oldPresence: {metas: [{id: 4, phx_ref: "4"}]}, newPresence: {metas: []}}
     })
-    assert.deepEqual(left, {})
   })
 })
 
@@ -101,19 +70,15 @@ describe("syncDiff", () => {
   it("syncs empty state", () => {
     let joins = {u1: {metas: [{id: 1, phx_ref: "1"}]}}
     let state = {}
-    Presence.syncDiff(state, {joins: joins, leaves: {}})
-    assert.deepEqual(state, {})
 
-    state = Presence.syncDiff(state, {
-      joins: joins,
-      leaves: {}
-    })
+    const returnedState = Presence.syncDiff(state, {joins: joins, leaves: {}})
     assert.deepEqual(state, joins)
+    assert.deepEqual(state, returnedState)
   })
 
   it("removes presence when meta is empty and adds additional meta", () => {
     let state = fixtures.state()
-    state = Presence.syncDiff(state, {joins: fixtures.joins(), leaves: fixtures.leaves()})
+    Presence.syncDiff(state, {joins: fixtures.joins(), leaves: fixtures.leaves()})
 
     assert.deepEqual(state, {
       u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]},
@@ -125,14 +90,88 @@ describe("syncDiff", () => {
     let state = {
       u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]}
     }
-    state = Presence.syncDiff(state, {joins: {}, leaves: {u1: {metas: [{id: 1, phx_ref: "1"}]}}})
+    Presence.syncDiff(state, {joins: {}, leaves: {u1: {metas: [{id: 1, phx_ref: "1"}]}}})
 
     assert.deepEqual(state, {
       u1: {metas: [{id: 1, phx_ref: "1.2"}]},
     })
   })
-})
 
+  it("calls onChange function on update", done => {
+    let state = {}
+    let update1 = {
+      joins: {u1: {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}},
+      leaves: {}
+    }
+    let update2 = {
+      joins: {u1: {metas: [{id: 1, phx_ref_prev: 1, phx_ref: 1.1}]}},
+      leaves: {u1: {metas: [{id: 1, phx_ref: 1}]}}
+    }
+
+    let stateAfterUpdate1 = {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}
+    let expectedFinalState = {metas: [{id: 2, phx_ref: 2}, {id: 1, phx_ref: 1.1, phx_ref_prev: 1}]}
+
+    let onChange = (key, oldPresence, newPresence) => {
+      assert.deepEqual(key, "u1");
+      assert.deepEqual(oldPresence, stateAfterUpdate1)
+      assert.deepEqual(newPresence, expectedFinalState)
+      done();
+    };
+
+    Presence.syncDiff(state, update1)
+    Presence.syncDiff(state, update2, onChange)
+  });
+
+  it("calls onChange function on leave", done => {
+    let state = {}
+    let update1 = {
+      joins: {u1: {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}},
+      leaves: {}
+    }
+    let update2 = {
+      joins: {},
+      leaves: {u1: {metas: [{id: 1, phx_ref: 1}]}}
+    }
+
+    let stateAfterUpdate1 = {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}
+    let expectedFinalState = {metas: [{id: 2, phx_ref: 2}]}
+
+    let onChange = (key, oldPresence, newPresence) => {
+      assert.deepEqual(key, "u1");
+      assert.deepEqual(oldPresence, stateAfterUpdate1)
+      assert.deepEqual(newPresence, expectedFinalState)
+      done();
+    };
+
+    Presence.syncDiff(state, update1)
+    Presence.syncDiff(state, update2, onChange)
+  });
+
+  it("calls onChange with latest custom state", done => {
+    let state = {}
+    let update1 = {
+      joins: {u1: {foo: 'bar', metas: [{id: 1, phx_ref: 1}]}},
+      leaves: {}
+    }
+    let update2 = {
+      joins: {u1: {foo: 'baz', metas: [{id: 1, phx_ref_prev: 1, phx_ref: 1.1}]}},
+      leaves: {u1: {foo: 'bar', metas: [{id: 1, phx_ref: 1}]}}
+    }
+
+    let stateAfterUpdate1 = {foo: 'bar', metas: [{id: 1, phx_ref: 1}]}
+    let expectedFinalState = {foo: 'baz', metas: [{id: 1, phx_ref: 1.1, phx_ref_prev: 1}]}
+
+    let onChange = (key, oldPresence, newPresence) => {
+      assert.deepEqual(key, "u1");
+      assert.deepEqual(oldPresence, stateAfterUpdate1)
+      assert.deepEqual(newPresence, expectedFinalState)
+      done();
+    };
+
+    Presence.syncDiff(state, update1)
+    Presence.syncDiff(state, update2, onChange)
+  });
+})
 
 describe("list", () => {
   it("lists full presence by default", () => {
@@ -178,14 +217,10 @@ describe("instance", () => {
 
   it("applies pending diff if state is not yet synced", () => {
     let presence = new Presence(channelStub)
-    let onJoins = []
-    let onLeaves = []
+    let onChanges = []
 
-    presence.onJoin((id, current, newPres) => {
-      onJoins.push({id, current, newPres})
-    })
-    presence.onLeave((id, current, leftPres) => {
-      onLeaves.push({id, current, leftPres})
+    presence.onChange((id, oldPresence, newPresence) => {
+      onChanges.push({id, oldPresence, newPresence})
     })
 
     // new connection
@@ -201,16 +236,14 @@ describe("instance", () => {
     assert.deepEqual(presence.pendingDiffs, [{joins: {}, leaves: leaves}])
 
     channelStub.trigger("presence_state", newState)
-    assert.deepEqual(onLeaves, [
-      {id: "u2", current: {metas: []}, leftPres: {metas: [{id: 2, phx_ref: "2"}]}}
+    assert.deepEqual(onChanges, [
+      {id: "u1", oldPresence: undefined, newPresence: user1},
+      {id: "u2", oldPresence: undefined, newPresence: user2},
+      {id: "u2", oldPresence: user2, newPresence: {metas: []}}
     ])
 
     assert.deepEqual(presence.list(listByFirst), [{id: 1, phx_ref: "1"}])
     assert.deepEqual(presence.pendingDiffs, [])
-    assert.deepEqual(onJoins, [
-      {id: "u1", current: undefined, newPres: {metas: [{id: 1, phx_ref: "1"}]}},
-      {id: "u2", current: undefined, newPres: {metas: [{id: 2, phx_ref: "2"}]}}
-    ])
 
     // disconnect and reconnect
     assert.equal(presence.inPendingSyncState(), false)
