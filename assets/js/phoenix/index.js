@@ -161,29 +161,26 @@
  *
  * ### Handling individual presence join and leave events
  *
- * The `presence.onJoin` and `presence.onLeave` callbacks can be used to
- * react to individual presences joining and leaving the app. For example:
+ * The `presence.onChange` callback can be used to react to individual
+ * presences joining and leaving the app. onChange can only be used when
+ * deprecated onJoin and onLeave functions are not used.
+ * For example:
  *
  * ```javascript
  * let presence = new Presence(channel)
  *
  * // detect if user has joined for the 1st time or from another tab/device
- * presence.onJoin((id, current, newPres) => {
- *   if(!current){
- *     console.log("user has entered for the first time", newPres)
+ * presence.onChange((id, oldPresence, newPresence) => {
+ *   if(!oldPresence){
+ *     console.log("user has entered for the first time", newPresence)
+ *   } else if (newPresence.metas.length === 0){
+ *     console.log("user has left from all devices", newPresence)
  *   } else {
- *     console.log("user additional presence", newPres)
+ *     console.log("old presence", oldPresence");
+ *     console.log("new presence", newPresence");
  *   }
  * })
  *
- * // detect if user has left from all tabs/devices, or is still present
- * presence.onLeave((id, current, leftPres) => {
- *   if(current.metas.length === 0){
- *     console.log("user has left from all devices", leftPres)
- *   } else {
- *     console.log("user left from a device", leftPres)
- *   }
- * })
  * // receive presence data from server
  * presence.onSync(() => {
  *   displayUsers(presence.list())
