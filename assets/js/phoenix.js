@@ -828,6 +828,7 @@ export class Socket {
   disconnect(callback, code, reason){
     this.closeWasClean = true
     this.reconnectTimer.reset()
+    this.onConnClose("disconnect")
     this.teardown(callback, code, reason)
   }
 

@@ -272,6 +272,24 @@ describe("with transports", done =>{
       assert.equal(socket.conn, null)
     })
 
+    it("calls onClose callback", done => {
+      socket.onClose(() => done());
+
+      socket.connect()
+      socket.disconnect()
+    });
+
+    it("sets channels to error state", () => {
+      socket.connect()
+
+      const channel = socket.channel("topic", {one: "two"})
+      channel.join().trigger("ok", {})
+      assert.equal(channel.state, "joined")
+
+      socket.disconnect()
+      assert.equal(channel.state, "errored")
+    });
+
     it("calls callback", () => {
       let count = 0
       socket.connect()
