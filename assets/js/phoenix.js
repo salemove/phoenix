@@ -1155,6 +1155,10 @@ export class LongPoll {
         case 204:
           this.poll()
           break
+        case 403:
+          this.onerror()
+          this.close()
+          break
         case 410:
           this.readyState = SOCKET_STATES.open
           this.onopen()
