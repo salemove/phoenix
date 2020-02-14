@@ -64,6 +64,36 @@ describe("syncState", () => {
       u4: {oldPresence: {metas: [{id: 4, phx_ref: "4"}]}, newPresence: {metas: []}}
     })
   })
+
+  it('has metas for presences after state sync due to server restart', () => {
+    // State prior to server disconnect, id: 1 is joined to presence
+    let state = {
+      u1: {metas: [{id: 1, phx_ref: "1"}]}
+    };
+
+    // New state from new server instance with id: 1 still joined, but with new phx_ref
+    let newState = {
+      u1: {metas: [{id: 1, phx_ref: "2"}]}
+    };
+
+    let changes = {}
+    let onChange = (key, oldPresence, newPresence) => {
+      changes[key] = {oldPresence: oldPresence, newPresence: newPresence}
+    }
+
+    Presence.syncState(state, newState, onChange);
+
+    assert.deepEqual(state, {
+      u1: {metas: [{id: 1, phx_ref: "2"}]}
+    });
+
+    assert.deepEqual(changes, {
+      u1: {
+        oldPresence: {metas: [{id: 1, phx_ref: "1"}]},
+        newPresence: {metas: [{id: 1, phx_ref: "2"}]}
+      }
+    });
+  });
 })
 
 describe("syncDiff", () => {

@@ -1362,8 +1362,12 @@ export class Presence {
           joins[key].metas = joinedMetas
         }
         if(leftMetas.length > 0){
-          leaves[key] = newPresence
-          leaves[key].metas = leftMetas
+          if(joinedMetas.length > 0){
+            leaves[key] = {metas: leftMetas};
+          } else {
+            leaves[key] = newPresence;
+            leaves[key].metas = leftMetas
+          }
         }
       } else {
         joins[key] = newPresence
