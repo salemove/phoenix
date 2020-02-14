@@ -1362,7 +1362,7 @@ export class Presence {
           joins[key].metas = joinedMetas
         }
         if(leftMetas.length > 0){
-          leaves[key] = newPresence
+          leaves[key] = this.clone(newPresence);
           leaves[key].metas = leftMetas
         }
       } else {
@@ -1457,6 +1457,8 @@ export class Presence {
   static map(obj, func){
     return Object.getOwnPropertyNames(obj).map(key => func(key, obj[key]))
   }
+
+  static clone(obj){ return JSON.parse(JSON.stringify(obj)) }
 }
 
 
