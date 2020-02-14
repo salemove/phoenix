@@ -1292,10 +1292,10 @@ export class Presence {
       let {onChange, onSync} = this.caller
 
       this.joinRef = this.channel.joinRef()
-      Presence.syncState(this.state, newState, onChange)
+      Presence.syncState(this.state, newState, onChange, channel)
 
       this.pendingDiffs.forEach(diff => {
-        Presence.syncDiff(this.state, diff, onChange)
+        Presence.syncDiff(this.state, diff, onChange, channel)
       })
       this.pendingDiffs = []
       onSync()
@@ -1307,7 +1307,7 @@ export class Presence {
       if(this.inPendingSyncState()){
         this.pendingDiffs.push(diff)
       } else {
-        Presence.syncDiff(this.state, diff, onChange)
+        Presence.syncDiff(this.state, diff, onChange, channel)
         onSync()
       }
     })
@@ -1341,7 +1341,7 @@ export class Presence {
    *
    * @returns {Presence}
    */
-  static syncState(state, newState, onChange){
+  static syncState(state, newState, onChange, channel){
     let joins = {}
     let leaves = {}
 
@@ -1369,7 +1369,8 @@ export class Presence {
         joins[key] = newPresence
       }
     })
-    return this.syncDiff(state, {joins: joins, leaves: leaves}, onChange)
+    console.log('woo', state, joins, leaves);
+    return this.syncDiff(state, {joins: joins, leaves: leaves}, onChange, channel)
   }
 
   /**
@@ -1388,7 +1389,7 @@ export class Presence {
    *
    * @returns {Presence}
    */
-  static syncDiff(state, {joins, leaves}, onChange){
+  static syncDiff(state, {joins, leaves}, onChange, channel){
     const changes = {}
     this.map(joins, (key, newPresence) => {
       changes[key] = {joinedMetas: newPresence.metas, leftMetas: [], update: newPresence}
