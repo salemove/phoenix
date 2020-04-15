@@ -32,7 +32,12 @@ defmodule Phoenix.Integration.LongPollSocketTest do
 
     def connect(map) do
       %{endpoint: Endpoint, params: params, transport: :longpoll} = map
-      {:ok, {:params, params}}
+
+      if (status = Map.get(params, "error")) do
+        {:error, String.to_atom(status)}
+      else
+        {:ok, {:params, params}}
+      end
     end
 
     def init({:params, _} = state) do
@@ -144,5 +149,13 @@ defmodule Phoenix.Integration.LongPollSocketTest do
 
     resp = poll(:get, "ws/longpoll", secret, nil)
     assert resp.body["messages"] == ["pong"]
+  end
+
+  test "returns custom error code" do
+    resp = poll(:get, "ws/longpoll", %{"error" => "service_unavailable"}, nil)
+    assert resp.body["status"] == 503
+
+    resp = poll(:get, "ws/longpoll", %{"error" => "too_many_requests"}, nil)
+    assert resp.body["status"] == 429
   end
 end
