@@ -1164,16 +1164,15 @@ export class LongPoll {
           this.onopen()
           this.poll()
           break
-        case 403:
-          this.onerror()
-          this.close()
-          break
         case 0:
         case 500:
           this.onerror()
           this.closeAndRetry()
           break
-        default: throw new Error(`unhandled poll status ${status}`)
+        default:
+          this.onerror({status: status})
+          this.close()
+          break
       }
     })
   }
