@@ -95,7 +95,10 @@ export default class LongPoll {
           this.onerror(500)
           this.closeAndRetry(1011, "internal server error", 500)
           break
-        default: throw new Error(`unhandled poll status ${status}`)
+        default:
+          this.onerror(status)
+          this.close()
+          break
       }
     })
   }
