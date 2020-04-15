@@ -203,8 +203,14 @@ defmodule Phoenix.Socket do
   See `Phoenix.Token` documentation for examples in
   performing token verification on connect.
   """
-  @callback connect(params :: map, Socket.t) :: {:ok, Socket.t} | :error
-  @callback connect(params :: map, Socket.t, connect_info :: map) :: {:ok, Socket.t} | :error
+  @callback connect(params :: map, Socket.t) ::
+              {:ok, Socket.t}
+              | :error
+              | {:error, atom() | integer()}
+  @callback connect(params :: map, Socket.t, connect_info :: map) ::
+              {:ok, Socket.t}
+              | :error
+              | {:error, atom() | integer()}
 
   @doc ~S"""
   Identifies the socket connection.
@@ -456,6 +462,7 @@ defmodule Phoenix.Socket do
 
   defp result({:ok, _}), do: :ok
   defp result(:error), do: :error
+  defp result({:error, _status}), do: :error
 
   def __init__({state, %{id: id, endpoint: endpoint} = socket}) do
     _ = id && endpoint.subscribe(id, link: true)
@@ -588,6 +595,9 @@ defmodule Phoenix.Socket do
                            "#{inspect invalid}. Expected nil or a string."
             :error
         end
+
+      {:error, status} ->
+        {:error, status}
 
       :error ->
         :error
