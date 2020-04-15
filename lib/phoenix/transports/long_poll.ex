@@ -100,15 +100,15 @@ defmodule Phoenix.Transports.LongPoll do
       "phx:lp:"
       <> Base.encode64(:crypto.strong_rand_bytes(16))
       <> (System.system_time(:millisecond) |> Integer.to_string)
-      
+
     keys = Keyword.get(opts, :connect_info, [])
     connect_info = Transport.connect_info(conn, endpoint, keys)
     arg = {endpoint, handler, opts, conn.params, priv_topic, connect_info}
     spec = {Phoenix.Transports.LongPoll.Server, arg}
 
     case DynamicSupervisor.start_child(Phoenix.Transports.LongPoll.Supervisor, spec) do
-      :ignore ->
-        conn |> put_status(:forbidden) |> status_json()
+      {:error, status} ->
+        conn |> put_status(status) |> status_json()
 
       {:ok, server_pid} ->
         data  = {:v1, endpoint.config(:endpoint_id), server_pid, priv_topic}
