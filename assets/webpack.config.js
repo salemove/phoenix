@@ -12,13 +12,6 @@ module.exports = {
   module: {
     rules: [
       {
-        test: path.resolve(__dirname, './js/phoenix.js'),
-        use: [{
-          loader: 'expose-loader',
-          options: 'Phoenix'
-        }]
-      },
-      {
         test: /\.js$/,
         exclude: /node_modules/,
         use: {
