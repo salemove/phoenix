@@ -93,10 +93,6 @@ defmodule Phoenix.Integration.LongPollChannelsTest do
       :error
     end
 
-    def connect(%{"custom_error" => "true"}, _socket) do
-      {:error, :custom}
-    end
-
     def connect(params, socket) do
       unless params["logging"] == "enabled", do: Logger.disable(self())
       {:ok, assign(socket, :user_id, params["user_id"])}
@@ -403,9 +399,6 @@ defmodule Phoenix.Integration.LongPollChannelsTest do
     describe "with #{vsn} serializer #{inspect serializer}" do
       test "refuses connects that error with 403 response" do
         resp = poll :get, "/ws", @vsn, %{"reject" => "true"}, %{}
-        assert resp.body["status"] == 403
-
-        resp = poll :get, "/ws", @vsn, %{"custom_error" => "true"}, %{}
         assert resp.body["status"] == 403
       end
 

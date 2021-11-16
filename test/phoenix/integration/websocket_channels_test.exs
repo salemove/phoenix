@@ -143,7 +143,7 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
     end
 
     def connect(%{"ratelimit" => "true"}, _socket) do
-      {:error, :rate_limit}
+      {:error, :too_many_requests}
     end
 
     def connect(params, socket) do
@@ -154,8 +154,6 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
     def id(socket) do
       if id = socket.assigns.user_id, do: "user_sockets:#{id}"
     end
-
-    def handle_error(conn, :rate_limit), do: Plug.Conn.send_resp(conn, 429, "Too many requests")
   end
 
   defmodule Endpoint do
@@ -168,8 +166,7 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
     socket "/ws", UserSocket,
       websocket: [
         check_origin: ["//example.com"],
-        timeout: 200,
-        error_handler: {UserSocket, :handle_error, []}
+        timeout: 200
       ]
 
     socket "/ws/admin", UserSocket,
