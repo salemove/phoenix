@@ -491,17 +491,15 @@ var LongPoll = class {
           this.onopen();
           this.poll();
           break;
-        case 403:
-          this.onerror();
-          this.close();
-          break;
         case 0:
         case 500:
           this.onerror();
           this.closeAndRetry();
           break;
         default:
-          throw new Error(`unhandled poll status ${status}`);
+          this.onerror({ status });
+          this.close();
+          break;
       }
     });
   }
@@ -528,38 +526,54 @@ var Presence = class {
     this.channel = channel;
     this.joinRef = null;
     this.caller = {
-      onJoin: function() {
-      },
-      onLeave: function() {
-      },
+      onChange: null,
+      onJoin: null,
+      onLeave: null,
       onSync: function() {
       }
     };
     this.channel.on(events.state, (newState) => {
-      let { onJoin, onLeave, onSync } = this.caller;
+      let { onChange, onJoin, onLeave, onSync } = this.caller;
       this.joinRef = this.channel.joinRef();
-      this.state = Presence.syncState(this.state, newState, onJoin, onLeave);
+      if (onJoin || onLeave) {
+        Presence.syncState(this.state, newState, onJoin, onLeave);
+      } else {
+        Presence.synchronizeState(this.state, newState, onChange);
+      }
       this.pendingDiffs.forEach((diff) => {
-        this.state = Presence.syncDiff(this.state, diff, onJoin, onLeave);
+        if (onJoin || onLeave) {
+          Presence.syncDiff(this.state, diff, onJoin, onLeave);
+        } else {
+          Presence.synchronizeDiff(this.state, diff, onChange);
+        }
       });
       this.pendingDiffs = [];
       onSync();
     });
     this.channel.on(events.diff, (diff) => {
-      let { onJoin, onLeave, onSync } = this.caller;
+      let { onChange, onJoin, onLeave, onSync } = this.caller;
       if (this.inPendingSyncState()) {
         this.pendingDiffs.push(diff);
       } else {
-        this.state = Presence.syncDiff(this.state, diff, onJoin, onLeave);
+        if (onJoin || onLeave) {
+          Presence.syncDiff(this.state, diff, onJoin, onLeave);
+        } else {
+          Presence.synchronizeDiff(this.state, diff, onChange);
+        }
         onSync();
       }
     });
   }
   onJoin(callback) {
+    console && console.warn && console.warn("onJoin is deprecated, use onChange instead");
     this.caller.onJoin = callback;
   }
   onLeave(callback) {
+    console && console.warn && console.warn("onLeave is deprecated, use onChange instead");
     this.caller.onLeave = callback;
+  }
+  onChange(callback) {
+    this.caller.onChange = callback;
   }
   onSync(callback) {
     this.caller.onSync = callback;
@@ -569,6 +583,39 @@ var Presence = class {
   }
   inPendingSyncState() {
     return !this.joinRef || this.joinRef !== this.channel.joinRef();
+  }
+  static synchronizeState(state, newState, onChange) {
+    let joins = {};
+    let leaves = {};
+    this.map(state, (key, presence) => {
+      if (!newState[key]) {
+        leaves[key] = presence;
+      }
+    });
+    this.map(newState, (key, newPresence) => {
+      let currentPresence = state[key];
+      if (currentPresence) {
+        let newRefs = newPresence.metas.map((m) => m.phx_ref);
+        let curRefs = currentPresence.metas.map((m) => m.phx_ref);
+        let joinedMetas = newPresence.metas.filter((m) => curRefs.indexOf(m.phx_ref) < 0);
+        let leftMetas = currentPresence.metas.filter((m) => newRefs.indexOf(m.phx_ref) < 0);
+        if (joinedMetas.length > 0) {
+          joins[key] = newPresence;
+          joins[key].metas = joinedMetas;
+        }
+        if (leftMetas.length > 0) {
+          if (joinedMetas.length > 0) {
+            leaves[key] = { metas: leftMetas };
+          } else {
+            leaves[key] = newPresence;
+            leaves[key].metas = leftMetas;
+          }
+        }
+      } else {
+        joins[key] = newPresence;
+      }
+    });
+    return this.synchronizeDiff(state, { joins, leaves }, onChange);
   }
   static syncState(currentState, newState, onJoin, onLeave) {
     let state = this.clone(currentState);
@@ -599,6 +646,38 @@ var Presence = class {
       }
     });
     return this.syncDiff(state, { joins, leaves }, onJoin, onLeave);
+  }
+  static synchronizeDiff(state, { joins, leaves }, onChange) {
+    const changes = {};
+    this.map(joins, (key, newPresence) => {
+      changes[key] = { joinedMetas: newPresence.metas, leftMetas: [], update: newPresence };
+    });
+    this.map(leaves, (key, leftPresence) => {
+      if (changes[key]) {
+        changes[key].leftMetas = leftPresence.metas;
+      } else {
+        changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: leftPresence };
+      }
+    });
+    this.map(changes, (key, { joinedMetas, leftMetas, update }) => {
+      const joinedRefs = joinedMetas.map((m) => m.phx_ref);
+      const refsToRemove = leftMetas.map((m) => m.phx_ref);
+      const oldPresence = state[key];
+      const newPresence = { metas: oldPresence ? oldPresence.metas : [] };
+      newPresence.metas = newPresence.metas.filter((m) => joinedRefs.indexOf(m.phx_ref) === -1).concat(joinedMetas).filter((p) => refsToRemove.indexOf(p.phx_ref) === -1);
+      Object.keys(update).forEach((key2) => {
+        if (key2 !== "metas")
+          newPresence[key2] = update[key2];
+      });
+      if (newPresence.metas.length === 0) {
+        delete state[key];
+      } else {
+        state[key] = newPresence;
+      }
+      if (onChange)
+        onChange(key, oldPresence, newPresence);
+    });
+    return state;
   }
   static syncDiff(state, diff, onJoin, onLeave) {
     let { joins, leaves } = this.clone(diff);
