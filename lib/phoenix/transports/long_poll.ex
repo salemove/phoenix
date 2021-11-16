@@ -107,8 +107,8 @@ defmodule Phoenix.Transports.LongPoll do
     spec = {Phoenix.Transports.LongPoll.Server, arg}
 
     case DynamicSupervisor.start_child(Phoenix.Transports.LongPoll.Supervisor, spec) do
-      :ignore ->
-        conn |> put_status(:forbidden) |> status_json()
+      {:error, status} ->
+        conn |> put_status(status) |> status_json()
 
       {:ok, server_pid} ->
         data  = {:v1, endpoint.config(:endpoint_id), server_pid, priv_topic}

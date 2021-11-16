@@ -30,7 +30,12 @@ defmodule Phoenix.Integration.WebSocketTest do
 
     def connect(map) do
       %{endpoint: Endpoint, params: params, transport: :websocket} = map
-      {:ok, {:params, params}}
+
+      if (status = Map.get(params, "error")) do
+        {:error, String.to_atom(status)}
+      else
+        {:ok, {:params, params}}
+      end
     end
 
     def init({:params, _} = state) do
@@ -144,6 +149,11 @@ defmodule Phoenix.Integration.WebSocketTest do
     assert {:ok, client} = WebsocketClient.start_link(self(), "#{@path}?key=value", :noop)
     WebsocketClient.send_message(client, "ping")
     assert_receive {:text, "pong"}
+  end
+
+  test "returns custom error code" do
+    assert {:error, {503, _}} = WebsocketClient.start_link(self(), "#{@path}?error=service_unavailable", :noop)
+    assert {:error, {429, _}} = WebsocketClient.start_link(self(), "#{@path}?error=too_many_requests", :noop)
   end
 
   test "allows a custom path" do
