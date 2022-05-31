@@ -1104,7 +1104,14 @@ var Socket = class {
     });
   }
   leaveOpenTopic(topic) {
-    let dupChannel = this.channels.find((c) => c.topic === topic && (c.isJoined() || c.isJoining()));
+    let dupChannel;
+    for (let i = 0; i < this.channels.length; i++) {
+      let c = this.channels[i];
+      if (c.topic === topic && (c.isJoined() || c.isJoining())) {
+        dupChannel = c;
+        break;
+      }
+    }
     if (dupChannel) {
       if (this.hasLogger())
         this.log("transport", `leaving duplicate topic "${topic}"`);
