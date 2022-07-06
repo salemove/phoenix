@@ -142,10 +142,6 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
       :error
     end
 
-    def connect(%{"ratelimit" => "true"}, _socket) do
-      {:error, :rate_limit}
-    end
-
     def connect(params, socket) do
       unless params["logging"] == "enabled", do: Logger.disable(self())
       {:ok, assign(socket, :user_id, params["user_id"])}
@@ -154,8 +150,6 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
     def id(socket) do
       if id = socket.assigns.user_id, do: "user_sockets:#{id}"
     end
-
-    def handle_error(conn, :rate_limit), do: Plug.Conn.send_resp(conn, 429, "Too many requests")
   end
 
   defmodule Endpoint do
@@ -168,8 +162,7 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
     socket "/ws", UserSocket,
       websocket: [
         check_origin: ["//example.com"],
-        timeout: 200,
-        error_handler: {UserSocket, :handle_error, []}
+        timeout: 200
       ]
 
     socket "/ws/admin", UserSocket,
@@ -510,11 +503,6 @@ defmodule Phoenix.Integration.WebSocketChannelsTest do
       test "refuses connects that error with 403 response" do
         assert WebsocketClient.start_link(self(), "#{@vsn_path}&reject=true", @serializer) ==
               {:error, {403, "Forbidden"}}
-      end
-
-      test "refuses connects that error with custom error response" do
-        assert WebsocketClient.start_link(self(), "#{@vsn_path}&ratelimit=true", @serializer) ==
-              {:error, {429, "Too Many Requests"}}
       end
 
       test "shuts down when receiving disconnect broadcasts on socket's id" do
