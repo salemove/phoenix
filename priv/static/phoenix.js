@@ -1,11 +1,21 @@
 var Phoenix = (() => {
   var __defProp = Object.defineProperty;
-  var __markAsModule = (target) => __defProp(target, "__esModule", { value: true });
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __export = (target, all) => {
-    __markAsModule(target);
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
   };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
   // js/phoenix/index.js
   var phoenix_exports = {};
@@ -1156,7 +1166,14 @@ var Phoenix = (() => {
       });
     }
     leaveOpenTopic(topic) {
-      let dupChannel = this.channels.find((c) => c.topic === topic && (c.isJoined() || c.isJoining()));
+      let dupChannel;
+      for (let i = 0; i < this.channels.length; i++) {
+        let c = this.channels[i];
+        if (c.topic === topic && (c.isJoined() || c.isJoining())) {
+          dupChannel = c;
+          break;
+        }
+      }
       if (dupChannel) {
         if (this.hasLogger())
           this.log("transport", `leaving duplicate topic "${topic}"`);
@@ -1164,5 +1181,5 @@ var Phoenix = (() => {
       }
     }
   };
-  return phoenix_exports;
+  return __toCommonJS(phoenix_exports);
 })();
