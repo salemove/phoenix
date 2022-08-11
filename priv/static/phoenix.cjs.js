@@ -1,31 +1,19 @@
 var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __markAsModule = (target) => __defProp(target, "__esModule", { value: true });
 var __export = (target, all) => {
+  __markAsModule(target);
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // js/phoenix/index.js
-var phoenix_exports = {};
-__export(phoenix_exports, {
+__export(exports, {
   Channel: () => Channel,
   LongPoll: () => LongPoll,
   Presence: () => Presence,
   Serializer: () => serializer_default,
   Socket: () => Socket
 });
-module.exports = __toCommonJS(phoenix_exports);
 
 // js/phoenix/utils.js
 var closure = (value) => {
@@ -1042,12 +1030,11 @@ var Socket = class {
     }, 150 * tries);
   }
   onConnClose(event) {
-    let closeCode = event && event.code;
     if (this.hasLogger())
       this.log("transport", "close", event);
     this.triggerChanError();
     clearTimeout(this.heartbeatTimer);
-    if (!this.closeWasClean && closeCode !== 1e3) {
+    if (!this.closeWasClean) {
       this.reconnectTimer.scheduleTimeout();
     }
     this.stateChangeCallbacks.close.forEach(([, callback]) => callback(event));
