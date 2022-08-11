@@ -143,6 +143,7 @@ export default class Socket {
     this.params = closure(opts.params || {})
     this.endPoint = `${endPoint}/${TRANSPORTS.websocket}`
     this.vsn = opts.vsn || DEFAULT_VSN
+    this.heartbeatTimeoutTimer = null
     this.heartbeatTimer = null
     this.pendingHeartbeatRef = null
     this.reconnectTimer = new Timer(() => {
@@ -317,6 +318,12 @@ export default class Socket {
   /**
    * @private
    */
+
+  clearHeartbeats(){
+    clearTimeout(this.heartbeatTimer)
+    clearTimeout(this.heartbeatTimeoutTimer)
+  }
+
   onConnOpen(){
     if(this.hasLogger()) this.log("transport", `connected to ${this.endPointURL()}`)
     this.closeWasClean = false
@@ -344,8 +351,8 @@ export default class Socket {
   resetHeartbeat(){
     if(this.conn && this.conn.skipHeartbeat){ return }
     this.pendingHeartbeatRef = null
-    clearTimeout(this.heartbeatTimer)
-    setTimeout(() => this.sendHeartbeat(), this.heartbeatIntervalMs)
+    this.clearHeartbeats()
+    this.heartbeatTimer = setTimeout(() => this.sendHeartbeat(), this.heartbeatIntervalMs)
   }
 
   teardown(callback, code, reason){
@@ -397,7 +404,7 @@ export default class Socket {
   onConnClose(event){
     if(this.hasLogger()) this.log("transport", "close", event)
     this.triggerChanError()
-    clearTimeout(this.heartbeatTimer)
+    this.clearHeartbeats()
     if(!this.closeWasClean){
       this.reconnectTimer.scheduleTimeout()
     }
@@ -515,7 +522,7 @@ export default class Socket {
     if(this.pendingHeartbeatRef && !this.isConnected()){ return }
     this.pendingHeartbeatRef = this.makeRef()
     this.push({topic: "phoenix", event: "heartbeat", payload: {}, ref: this.pendingHeartbeatRef})
-    this.heartbeatTimer = setTimeout(() => this.heartbeatTimeout(), this.heartbeatIntervalMs)
+    this.heartbeatTimeoutTimer = setTimeout(() => this.heartbeatTimeout(), this.heartbeatIntervalMs)
   }
 
   flushSendBuffer(){
@@ -529,9 +536,9 @@ export default class Socket {
     this.decode(rawMessage.data, msg => {
       let {topic, event, payload, ref, join_ref} = msg
       if(ref && ref === this.pendingHeartbeatRef){
-        clearTimeout(this.heartbeatTimer)
+        this.clearHeartbeats()
         this.pendingHeartbeatRef = null
-        setTimeout(() => this.sendHeartbeat(), this.heartbeatIntervalMs)
+        this.heartbeatTimer = setTimeout(() => this.sendHeartbeat(), this.heartbeatIntervalMs)
       }
 
       if(this.hasLogger()) this.log("receive", `${payload.status || ""} ${topic} ${event} ${ref && "(" + ref + ")" || ""}`, payload)
