@@ -979,6 +979,15 @@ var Socket = class {
         this.log("transport", "heartbeat timeout. Attempting to re-establish connection");
       }
       this.abnormalClose("heartbeat timeout");
+      this.triggerChanError();
+      if (this.conn) {
+        this.conn.onopen = null;
+        this.conn.onerror = null;
+        this.conn.onmessage = null;
+        this.conn.onclose = null;
+      }
+      this.conn = null;
+      this.connect();
     }
   }
   resetHeartbeat() {
