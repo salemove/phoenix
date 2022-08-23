@@ -395,11 +395,10 @@ export default class Socket {
   }
 
   onConnClose(event){
-    let closeCode = event && event.code
     if(this.hasLogger()) this.log("transport", "close", event)
     this.triggerChanError()
     clearTimeout(this.heartbeatTimer)
-    if(!this.closeWasClean && closeCode !== 1000){
+    if(!this.closeWasClean){
       this.reconnectTimer.scheduleTimeout()
     }
     this.stateChangeCallbacks.close.forEach(([, callback]) => callback(event))
