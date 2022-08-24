@@ -122,6 +122,9 @@ defmodule Phoenix.Endpoint.Cowboy2Handler do
 
   defp handle_reply(handler, {:stop, _reason, state}), do: {:stop, [handler | state]}
 
+  defp handle_reply(handler, {:close, code, reason, state}),
+    do: {[{:close, code, reason}], [handler | state]}
+
   defp handle_control_frame(payload_with_opts, handler_state) do
     [handler | state] = handler_state
     reply =
