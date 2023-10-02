@@ -173,7 +173,6 @@ var Channel = class {
     }));
     this.joinPush.receive("ok", () => {
       this.state = CHANNEL_STATES.joined;
-      this.rejoinTimer.reset();
       this.pushBuffer.forEach((pushEvent) => pushEvent.send());
       this.pushBuffer = [];
     });
