@@ -325,7 +325,11 @@ export default class Socket {
   }
 
   onConnOpen(){
-    if(this.hasLogger()) this.log("transport", `connected to ${this.endPointURL()}`)
+    if(this.hasLogger()) {
+      const endPointURL = this.endPointURL()
+      const prunedURL = endPointURL.replace(/access_token=([^&#/]+)/, 'access_token=-pruned-')
+      this.log("transport", `connected to ${prunedURL}`)
+    }
     this.closeWasClean = false
     this.establishedConnections++
     this.flushSendBuffer()
