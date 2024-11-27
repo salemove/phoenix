@@ -15,7 +15,7 @@ let fixtures = {
     return {u1: {metas: [{id: 1, phx_ref: "1.2"}]}}
   },
   leaves(){
-    return {u2: {metas: [{id: 2, phx_ref: "2"}]}}
+    return {u2: {metas: [{phx_ref: "2"}]}}
   },
   state(){
     return {
@@ -183,7 +183,7 @@ describe("synchronizeDiff", () => {
     let state = {
       u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]}
     }
-    Presence.synchronizeDiff(state, {joins: {}, leaves: {u1: {metas: [{id: 1, phx_ref: "1"}]}}})
+    Presence.synchronizeDiff(state, {joins: {}, leaves: {u1: {metas: [{phx_ref: "1"}]}}})
 
     assert.deepEqual(state, {
       u1: {metas: [{id: 1, phx_ref: "1.2"}]},
@@ -198,7 +198,7 @@ describe("synchronizeDiff", () => {
     }
     let update2 = {
       joins: {u1: {metas: [{id: 1, phx_ref_prev: 1, phx_ref: 1.1}]}},
-      leaves: {u1: {metas: [{id: 1, phx_ref: 1}]}}
+      leaves: {u1: {metas: [{phx_ref: 1}]}}
     }
 
     let stateAfterUpdate1 = {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}
@@ -223,7 +223,7 @@ describe("synchronizeDiff", () => {
     }
     let update2 = {
       joins: {},
-      leaves: {u1: {metas: [{id: 1, phx_ref: 1}]}}
+      leaves: {u1: {metas: [{phx_ref: 1}]}}
     }
 
     let stateAfterUpdate1 = {metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}
@@ -248,11 +248,36 @@ describe("synchronizeDiff", () => {
     }
     let update2 = {
       joins: {u1: {foo: 'baz', metas: [{id: 1, phx_ref_prev: 1, phx_ref: 1.1}]}},
-      leaves: {u1: {foo: 'bar', metas: [{id: 1, phx_ref: 1}]}}
+      leaves: {u1: {metas: [{phx_ref: 1}]}}
     }
 
     let stateAfterUpdate1 = {foo: 'bar', metas: [{id: 1, phx_ref: 1}]}
     let expectedFinalState = {foo: 'baz', metas: [{id: 1, phx_ref: 1.1, phx_ref_prev: 1}]}
+
+    let onChange = (key, oldPresence, newPresence) => {
+      assert.deepEqual(key, "u1");
+      assert.deepEqual(oldPresence, stateAfterUpdate1)
+      assert.deepEqual(newPresence, expectedFinalState)
+      done();
+    };
+
+    Presence.synchronizeDiff(state, update1)
+    Presence.synchronizeDiff(state, update2, onChange)
+  });
+
+  it("uses the latest known state on leave when there are no joins", done => {
+    let state = {}
+    let update1 = {
+      joins: {u1: {foo: 'bar', metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}},
+      leaves: {}
+    }
+    let update2 = {
+      joins: {},
+      leaves: {u1: {metas: [{phx_ref: 1}]}}
+    }
+
+    let stateAfterUpdate1 = {foo: 'bar', metas: [{id: 1, phx_ref: 1}, {id: 2, phx_ref: 2}]}
+    let expectedFinalState = {foo: 'bar', metas: [{id: 2, phx_ref: 2}]}
 
     let onChange = (key, oldPresence, newPresence) => {
       assert.deepEqual(key, "u1");
@@ -290,7 +315,7 @@ describe("syncDiff", () => {
     let state = {
       u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]}
     }
-    state = Presence.syncDiff(state, {joins: {}, leaves: {u1: {metas: [{id: 1, phx_ref: "1"}]}}})
+    state = Presence.syncDiff(state, {joins: {}, leaves: {u1: {metas: [{phx_ref: "1"}]}}})
 
     assert.deepEqual(state, {
       u1: {metas: [{id: 1, phx_ref: "1.2"}]},
