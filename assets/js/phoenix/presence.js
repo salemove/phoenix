@@ -198,7 +198,7 @@ export default class Presence {
       if (changes[key]) {
         changes[key].leftMetas = leftPresence.metas;
       } else {
-        changes[key] = {joinedMetas: [], leftMetas: leftPresence.metas, update: leftPresence}
+        changes[key] = {joinedMetas: [], leftMetas: leftPresence.metas, update: {}}
       }
     })
 
@@ -207,7 +207,7 @@ export default class Presence {
       const refsToRemove = leftMetas.map(m => m.phx_ref)
       const oldPresence = state[key];
 
-      const newPresence = {metas: oldPresence ? oldPresence.metas : []};
+      const newPresence = oldPresence ? { ...oldPresence } : {metas: []}
       newPresence.metas = newPresence.metas
         .filter(m => joinedRefs.indexOf(m.phx_ref) === -1)
         .concat(joinedMetas)
