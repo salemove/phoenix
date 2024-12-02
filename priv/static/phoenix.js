@@ -2,7 +2,21 @@ var Phoenix = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __propIsEnum = Object.prototype.propertyIsEnumerable;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __spreadValues = (a, b) => {
+    for (var prop in b || (b = {}))
+      if (__hasOwnProp.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    if (__getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(b)) {
+        if (__propIsEnum.call(b, prop))
+          __defNormalProp(a, prop, b[prop]);
+      }
+    return a;
+  };
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
@@ -693,14 +707,14 @@ var Phoenix = (() => {
         if (changes[key]) {
           changes[key].leftMetas = leftPresence.metas;
         } else {
-          changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: leftPresence };
+          changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: {} };
         }
       });
       this.map(changes, (key, { joinedMetas, leftMetas, update }) => {
         const joinedRefs = joinedMetas.map((m) => m.phx_ref);
         const refsToRemove = leftMetas.map((m) => m.phx_ref);
         const oldPresence = state[key];
-        const newPresence = { metas: oldPresence ? oldPresence.metas : [] };
+        const newPresence = oldPresence ? __spreadValues({}, oldPresence) : { metas: [] };
         newPresence.metas = newPresence.metas.filter((m) => joinedRefs.indexOf(m.phx_ref) === -1).concat(joinedMetas).filter((p) => refsToRemove.indexOf(p.phx_ref) === -1);
         Object.keys(update).forEach((key2) => {
           if (key2 !== "metas")

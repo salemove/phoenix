@@ -693,14 +693,14 @@ var Presence = class {
       if (changes[key]) {
         changes[key].leftMetas = leftPresence.metas;
       } else {
-        changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: leftPresence };
+        changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: {} };
       }
     });
     this.map(changes, (key, { joinedMetas, leftMetas, update }) => {
       const joinedRefs = joinedMetas.map((m) => m.phx_ref);
       const refsToRemove = leftMetas.map((m) => m.phx_ref);
       const oldPresence = state[key];
-      const newPresence = { metas: oldPresence ? oldPresence.metas : [] };
+      const newPresence = oldPresence ? { ...oldPresence } : { metas: [] };
       newPresence.metas = newPresence.metas.filter((m) => joinedRefs.indexOf(m.phx_ref) === -1).concat(joinedMetas).filter((p) => refsToRemove.indexOf(p.phx_ref) === -1);
       Object.keys(update).forEach((key2) => {
         if (key2 !== "metas")
