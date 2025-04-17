@@ -2,7 +2,21 @@ var Phoenix = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __propIsEnum = Object.prototype.propertyIsEnumerable;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __spreadValues = (a, b) => {
+    for (var prop in b || (b = {}))
+      if (__hasOwnProp.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    if (__getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(b)) {
+        if (__propIsEnum.call(b, prop))
+          __defNormalProp(a, prop, b[prop]);
+      }
+    return a;
+  };
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
@@ -512,7 +526,9 @@ var Phoenix = (() => {
             this.closeAndRetry(1011, "internal server error", 500);
             break;
           default:
-            throw new Error(`unhandled poll status ${status}`);
+            this.onerror(status);
+            this.close();
+            break;
         }
       });
     }
@@ -561,38 +577,54 @@ var Phoenix = (() => {
       this.channel = channel;
       this.joinRef = null;
       this.caller = {
-        onJoin: function() {
-        },
-        onLeave: function() {
-        },
+        onChange: null,
+        onJoin: null,
+        onLeave: null,
         onSync: function() {
         }
       };
       this.channel.on(events.state, (newState) => {
-        let { onJoin, onLeave, onSync } = this.caller;
+        let { onChange, onJoin, onLeave, onSync } = this.caller;
         this.joinRef = this.channel.joinRef();
-        this.state = Presence.syncState(this.state, newState, onJoin, onLeave);
+        if (onJoin || onLeave) {
+          Presence.syncState(this.state, newState, onJoin, onLeave);
+        } else {
+          Presence.synchronizeState(this.state, newState, onChange);
+        }
         this.pendingDiffs.forEach((diff) => {
-          this.state = Presence.syncDiff(this.state, diff, onJoin, onLeave);
+          if (onJoin || onLeave) {
+            Presence.syncDiff(this.state, diff, onJoin, onLeave);
+          } else {
+            Presence.synchronizeDiff(this.state, diff, onChange);
+          }
         });
         this.pendingDiffs = [];
         onSync();
       });
       this.channel.on(events.diff, (diff) => {
-        let { onJoin, onLeave, onSync } = this.caller;
+        let { onChange, onJoin, onLeave, onSync } = this.caller;
         if (this.inPendingSyncState()) {
           this.pendingDiffs.push(diff);
         } else {
-          this.state = Presence.syncDiff(this.state, diff, onJoin, onLeave);
+          if (onJoin || onLeave) {
+            Presence.syncDiff(this.state, diff, onJoin, onLeave);
+          } else {
+            Presence.synchronizeDiff(this.state, diff, onChange);
+          }
           onSync();
         }
       });
     }
     onJoin(callback) {
+      console && console.warn && console.warn("onJoin is deprecated, use onChange instead");
       this.caller.onJoin = callback;
     }
     onLeave(callback) {
+      console && console.warn && console.warn("onLeave is deprecated, use onChange instead");
       this.caller.onLeave = callback;
+    }
+    onChange(callback) {
+      this.caller.onChange = callback;
     }
     onSync(callback) {
       this.caller.onSync = callback;
@@ -602,6 +634,39 @@ var Phoenix = (() => {
     }
     inPendingSyncState() {
       return !this.joinRef || this.joinRef !== this.channel.joinRef();
+    }
+    static synchronizeState(state, newState, onChange) {
+      let joins = {};
+      let leaves = {};
+      this.map(state, (key, presence) => {
+        if (!newState[key]) {
+          leaves[key] = presence;
+        }
+      });
+      this.map(newState, (key, newPresence) => {
+        let currentPresence = state[key];
+        if (currentPresence) {
+          let newRefs = newPresence.metas.map((m) => m.phx_ref);
+          let curRefs = currentPresence.metas.map((m) => m.phx_ref);
+          let joinedMetas = newPresence.metas.filter((m) => curRefs.indexOf(m.phx_ref) < 0);
+          let leftMetas = currentPresence.metas.filter((m) => newRefs.indexOf(m.phx_ref) < 0);
+          if (joinedMetas.length > 0) {
+            joins[key] = newPresence;
+            joins[key].metas = joinedMetas;
+          }
+          if (leftMetas.length > 0) {
+            if (joinedMetas.length > 0) {
+              leaves[key] = { metas: leftMetas };
+            } else {
+              leaves[key] = newPresence;
+              leaves[key].metas = leftMetas;
+            }
+          }
+        } else {
+          joins[key] = newPresence;
+        }
+      });
+      return this.synchronizeDiff(state, { joins, leaves }, onChange);
     }
     static syncState(currentState, newState, onJoin, onLeave) {
       let state = this.toNullProtoObj(this.clone(currentState));
@@ -633,6 +698,38 @@ var Phoenix = (() => {
         }
       });
       return this.syncDiff(state, { joins, leaves }, onJoin, onLeave);
+    }
+    static synchronizeDiff(state, { joins, leaves }, onChange) {
+      const changes = {};
+      this.map(joins, (key, newPresence) => {
+        changes[key] = { joinedMetas: newPresence.metas, leftMetas: [], update: newPresence };
+      });
+      this.map(leaves, (key, leftPresence) => {
+        if (changes[key]) {
+          changes[key].leftMetas = leftPresence.metas;
+        } else {
+          changes[key] = { joinedMetas: [], leftMetas: leftPresence.metas, update: {} };
+        }
+      });
+      this.map(changes, (key, { joinedMetas, leftMetas, update }) => {
+        const joinedRefs = joinedMetas.map((m) => m.phx_ref);
+        const refsToRemove = leftMetas.map((m) => m.phx_ref);
+        const oldPresence = state[key];
+        const newPresence = oldPresence ? __spreadValues({}, oldPresence) : { metas: [] };
+        newPresence.metas = newPresence.metas.filter((m) => joinedRefs.indexOf(m.phx_ref) === -1).concat(joinedMetas).filter((p) => refsToRemove.indexOf(p.phx_ref) === -1);
+        Object.keys(update).forEach((key2) => {
+          if (key2 !== "metas")
+            newPresence[key2] = update[key2];
+        });
+        if (newPresence.metas.length === 0) {
+          delete state[key];
+        } else {
+          state[key] = newPresence;
+        }
+        if (onChange)
+          onChange(key, oldPresence, newPresence);
+      });
+      return state;
     }
     static syncDiff(state, diff, onJoin, onLeave) {
       state = this.toNullProtoObj(state);
@@ -959,8 +1056,11 @@ var Phoenix = (() => {
       clearTimeout(this.heartbeatTimeoutTimer);
     }
     onConnOpen() {
-      if (this.hasLogger())
-        this.log("transport", `connected to ${this.endPointURL()}`);
+      if (this.hasLogger()) {
+        const endPointURL = this.endPointURL();
+        const prunedURL = endPointURL.replace(/access_token=([^&#/]+)/, "access_token=-pruned-");
+        this.log("transport", `connected to ${prunedURL}`);
+      }
       this.closeWasClean = false;
       this.establishedConnections++;
       this.flushSendBuffer();
@@ -1034,12 +1134,11 @@ var Phoenix = (() => {
       }, 150 * tries);
     }
     onConnClose(event) {
-      let closeCode = event && event.code;
       if (this.hasLogger())
         this.log("transport", "close", event);
       this.triggerChanError();
       this.clearHeartbeats();
-      if (!this.closeWasClean && closeCode !== 1e3) {
+      if (!this.closeWasClean) {
         this.reconnectTimer.scheduleTimeout();
       }
       this.stateChangeCallbacks.close.forEach(([, callback]) => callback(event));
@@ -1152,7 +1251,14 @@ var Phoenix = (() => {
       });
     }
     leaveOpenTopic(topic) {
-      let dupChannel = this.channels.find((c) => c.topic === topic && (c.isJoined() || c.isJoining()));
+      let dupChannel;
+      for (let i = 0; i < this.channels.length; i++) {
+        let c = this.channels[i];
+        if (c.topic === topic && (c.isJoined() || c.isJoining())) {
+          dupChannel = c;
+          break;
+        }
+      }
       if (dupChannel) {
         if (this.hasLogger())
           this.log("transport", `leaving duplicate topic "${topic}"`);
