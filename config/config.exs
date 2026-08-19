@@ -7,7 +7,8 @@ config :logger, :console,
 config :phoenix,
   json_library: Jason,
   stacktrace_depth: 20,
-  trim_on_html_eex_engine: false
+  trim_on_html_eex_engine: false,
+  sort_verified_routes_query_params: true
 
 if Mix.env() == :dev do
   esbuild = fn args ->
@@ -19,7 +20,7 @@ if Mix.env() == :dev do
   end
 
   config :esbuild,
-    version: "0.14.41",
+    version: "0.25.4",
     module: esbuild.(~w(--format=esm --sourcemap --outfile=../priv/static/phoenix.mjs)),
     main: esbuild.(~w(--format=cjs --sourcemap --outfile=../priv/static/phoenix.cjs.js)),
     cdn:

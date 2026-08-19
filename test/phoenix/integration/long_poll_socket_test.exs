@@ -1,7 +1,9 @@
 Code.require_file("../../support/http_client.exs", __DIR__)
 
 defmodule Phoenix.Integration.LongPollSocketTest do
+  # TODO: use parameterized tests once we require Elixir 1.18
   use ExUnit.Case
+
   import ExUnit.CaptureLog
 
   alias Phoenix.Integration.HTTPClient
@@ -10,6 +12,7 @@ defmodule Phoenix.Integration.LongPollSocketTest do
   @moduletag :capture_log
   @port 5908
   @pool_size 1
+  @token_header "x-phoenix-longpoll-token"
 
   Application.put_env(
     :phoenix,
@@ -19,6 +22,7 @@ defmodule Phoenix.Integration.LongPollSocketTest do
     debug_errors: false,
     secret_key_base: String.duplicate("abcdefgh", 8),
     server: true,
+    drainer: false,
     pubsub_server: __MODULE__
   )
 
@@ -27,7 +31,7 @@ defmodule Phoenix.Integration.LongPollSocketTest do
 
     def child_spec(opts) do
       :value = Keyword.fetch!(opts, :custom)
-      Supervisor.child_spec({Task, fn -> :ok end}, [])
+      :ignore
     end
 
     def connect(map) do
@@ -67,13 +71,15 @@ defmodule Phoenix.Integration.LongPollSocketTest do
       custom: :value
 
     socket "/custom/:socket_var", UserSocket,
-      longpoll: [path: ":path_var/path", check_origin: ["//example.com"], timeout: 200],
+      longpoll: [path: ":path_var/path", check_origin: ["//example.com"], pubsub_timeout_ms: 200],
       custom: :value
   end
 
-  setup_all do
-    capture_log(fn -> start_supervised! Endpoint end)
-    start_supervised! {Phoenix.PubSub, name: __MODULE__, pool_size: @pool_size}
+  setup %{adapter: adapter} do
+    config = Application.get_env(:phoenix, Endpoint)
+    Application.put_env(:phoenix, Endpoint, Keyword.merge(config, adapter: adapter))
+    capture_log(fn -> start_supervised!(Endpoint) end)
+    start_supervised!({Phoenix.PubSub, name: __MODULE__, pool_size: @pool_size})
     :ok
   end
 
@@ -86,62 +92,120 @@ defmodule Phoenix.Integration.LongPollSocketTest do
   end
 
   def poll(method, path, params, body \\ nil, headers \\ %{}) do
+    {token, params} = Map.pop(params, "token")
+
+    headers =
+      if token do
+        Map.put(headers, @token_header, token)
+      else
+        headers
+      end
+
+    do_poll(method, path, params, body, headers)
+  end
+
+  def poll_with_token_in_params(method, path, params, body \\ nil, headers \\ %{}) do
+    do_poll(method, path, params, body, headers)
+  end
+
+  defp do_poll(method, path, params, body, headers) do
     headers = Map.merge(%{"content-type" => "application/json"}, headers)
     url = "http://127.0.0.1:#{@port}/#{path}?" <> URI.encode_query(params)
     {:ok, resp} = HTTPClient.request(method, url, headers, body)
     update_in(resp.body, &Phoenix.json_library().decode!(&1))
   end
 
-  test "refuses unallowed origins" do
-    capture_log(fn ->
-      resp = poll(:get, "ws/longpoll", %{}, nil, %{"origin" => "https://example.com"})
-      assert resp.body["status"] == 410
+  for %{adapter: adapter} <- [
+        %{adapter: Bandit.PhoenixAdapter},
+        %{adapter: Phoenix.Endpoint.Cowboy2Adapter}
+      ] do
+    describe "adapter: #{inspect(adapter)}" do
+      @describetag adapter: adapter
 
-      resp = poll(:get, "ws/longpoll", %{}, nil, %{"origin" => "http://notallowed.com"})
-      assert resp.body["status"] == 403
-    end)
-  end
+      test "refuses unallowed origins" do
+        capture_log(fn ->
+          resp = poll(:get, "ws/longpoll", %{}, nil, %{"origin" => "https://example.com"})
+          assert resp.body["status"] == 410
 
-  test "returns params with sync request" do
-    resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
-    assert resp.body["token"]
-    assert resp.body["status"] == 410
-    assert resp.status == 200
-    secret = Map.take(resp.body, ["token"])
+          resp = poll(:get, "ws/longpoll", %{}, nil, %{"origin" => "http://notallowed.com"})
+          assert resp.body["status"] == 403
+        end)
+      end
 
-    resp = poll(:post, "ws/longpoll", secret, "params")
-    assert resp.body["status"] == 200
+      test "returns params with sync request" do
+        resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
+        assert resp.body["token"]
+        assert resp.body["status"] == 410
+        assert resp.status == 200
+        secret = Map.take(resp.body, ["token"])
 
-    resp = poll(:get, "ws/longpoll", secret, nil)
-    assert resp.body["messages"] == [~s(%{"hello" => "world"})]
-  end
+        resp = poll(:post, "ws/longpoll", secret, "params")
+        assert resp.body["status"] == 200
 
-  test "allows a path with variables" do
-    path = "custom/123/456/path"
-    resp = poll(:get, path, %{"key" => "value"}, nil)
-    secret = Map.take(resp.body, ["token"])
+        resp = poll(:get, "ws/longpoll", secret, nil)
+        assert resp.body["messages"] == [~s(%{"hello" => "world"})]
+      end
 
-    resp = poll(:post, path, secret, "params")
-    assert resp.body["status"] == 200
+      test "allows a path with variables" do
+        path = "custom/123/456/path"
+        resp = poll(:get, path, %{"key" => "value"}, nil)
+        secret = Map.take(resp.body, ["token"])
 
-    resp = poll(:get, path, secret, nil)
-    [params] = resp.body["messages"]
-    assert params =~ ~s("key" => "value")
-    assert params =~ ~s("socket_var" => "123")
-    assert params =~ ~s(path_var" => "456")
-  end
+        resp = poll(:post, path, secret, "params")
+        assert resp.body["status"] == 200
 
-  test "returns pong from async request" do
-    resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
-    assert resp.body["token"]
-    assert resp.body["status"] == 410
-    assert resp.status == 200
-    secret = Map.take(resp.body, ["token"])
+        resp = poll(:get, path, secret, nil)
+        [params] = resp.body["messages"]
+        assert params =~ ~s("key" => "value")
+        assert params =~ ~s("socket_var" => "123")
+        assert params =~ ~s(path_var" => "456")
+      end
 
-    resp = poll(:post, "ws/longpoll", secret, "ping")
-    assert resp.body["status"] == 200
+      test "accepts the token from params" do
+        resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
+        secret = Map.take(resp.body, ["token"])
 
-    resp = poll(:get, "ws/longpoll", secret, nil)
-    assert resp.body["messages"] == ["pong"]
+        resp = poll_with_token_in_params(:post, "ws/longpoll", secret, "params")
+        assert resp.body["status"] == 200
+
+        resp = poll_with_token_in_params(:get, "ws/longpoll", secret)
+        assert resp.body["messages"] == [~s(%{"hello" => "world"})]
+      end
+
+      test "the header takes precedence over a stale params token" do
+        resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
+        token = resp.body["token"]
+
+        resp =
+          poll_with_token_in_params(
+            :post,
+            "ws/longpoll",
+            %{"token" => "bogus"},
+            "params",
+            %{@token_header => token}
+          )
+
+        assert resp.body["status"] == 200
+      end
+
+      test "responses are never cached" do
+        resp = poll(:get, "ws/longpoll", %{}, nil)
+        assert {_, ~c"no-store"} = List.keyfind(resp.headers, ~c"cache-control", 0)
+      end
+
+      test "returns pong from async request" do
+        resp = poll(:get, "ws/longpoll", %{"hello" => "world"}, nil)
+        assert resp.body["token"]
+        assert resp.body["status"] == 410
+        assert resp.status == 200
+        secret = Map.take(resp.body, ["token"])
+
+        resp = poll(:post, "ws/longpoll", secret, "ping")
+        assert resp.body["status"] == 200
+
+        resp = poll(:get, "ws/longpoll", secret, nil)
+        assert resp.body["messages"] == ["pong"]
+      end
+    end
   end
 end

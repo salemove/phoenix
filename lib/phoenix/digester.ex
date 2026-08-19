@@ -1,5 +1,4 @@
 defmodule Phoenix.Digester do
-  @digested_file_regex ~r/(-[a-fA-F\d]{32})/
   @manifest_version 1
   @empty_manifest %{
     "version" => @manifest_version,
@@ -23,12 +22,16 @@ defmodule Phoenix.Digester do
       File.mkdir_p!(output_path)
 
       files = filter_files(input_path)
+      files = fixup_sourcemaps(files)
       latest = generate_latest(files)
       digests = load_compile_digests(output_path)
       digested_files = Enum.map(files, &digested_contents(&1, latest, with_vsn?))
 
       save_manifest(digested_files, latest, digests, output_path)
-      Enum.each(digested_files, &write_to_disk(&1, output_path))
+
+      digested_files
+      |> Task.async_stream(&write_to_disk(&1, output_path), ordered: false, timeout: :infinity)
+      |> Stream.run()
     else
       {:error, :invalid_path}
     end
@@ -40,6 +43,30 @@ defmodule Phoenix.Digester do
     |> Path.wildcard()
     |> Enum.filter(&(not (File.dir?(&1) or compiled_file?(&1))))
     |> Enum.map(&map_file(&1, input_path))
+  end
+
+  defp fixup_sourcemaps(files) when is_list(files) do
+    Enum.map(files, &maybe_fixup_sourcemap(&1, files))
+  end
+
+  defp maybe_fixup_sourcemap(sourcemap, files) do
+    if Path.extname(sourcemap.filename) == ".map" do
+      fixup_sourcemap(sourcemap, files)
+    else
+      sourcemap
+    end
+  end
+
+  defp fixup_sourcemap(%{} = sourcemap, files) do
+    asset_path = Path.rootname(sourcemap.absolute_path, ".map")
+    asset = Enum.find(files, fn file -> file.absolute_path == asset_path end)
+
+    if asset do
+      new_digested_filename = asset.digested_filename <> ".map"
+      %{sourcemap | digest: asset.digest, digested_filename: new_digested_filename}
+    else
+      sourcemap
+    end
   end
 
   defp generate_latest(files) do
@@ -128,12 +155,16 @@ defmodule Phoenix.Digester do
   defp manifest_join(path, filename), do: Path.join(path, filename)
 
   defp compiled_file?(file_path) do
-    compressors = Application.fetch_env!(:phoenix, :static_compressors)
-    compressed_extensions = Enum.flat_map(compressors, & &1.file_extensions)
+    digested_file_regex = ~r/(-[a-fA-F\d]{32})/
 
-    Regex.match?(@digested_file_regex, Path.basename(file_path)) ||
-      Path.extname(file_path) in compressed_extensions ||
+    Regex.match?(digested_file_regex, Path.basename(file_path)) ||
+      Path.extname(file_path) in compressed_extensions() ||
       Path.basename(file_path) == "cache_manifest.json"
+  end
+
+  defp compressed_extensions do
+    compressors = Application.fetch_env!(:phoenix, :static_compressors)
+    Enum.flat_map(compressors, & &1.file_extensions())
   end
 
   defp map_file(file_path, input_path) do
@@ -164,17 +195,24 @@ defmodule Phoenix.Digester do
     compressors = Application.fetch_env!(:phoenix, :static_compressors)
 
     Enum.each(compressors, fn compressor ->
-      [file_extension | _] = compressor.file_extensions
+      [file_extension | _] = compressor.file_extensions()
 
-      with {:ok, compressed_digested} <-
-             compressor.compress_file(file.digested_filename, file.digested_content) do
+      compressed_digested_result =
+        compressor.compress_file(file.digested_filename, file.digested_content)
+
+      with {:ok, compressed_digested} <- compressed_digested_result do
         File.write!(
           Path.join(path, file.digested_filename <> file_extension),
           compressed_digested
         )
       end
 
-      with {:ok, compressed} <- compressor.compress_file(file.filename, file.content) do
+      compress_result =
+        if file.digested_content == file.content,
+          do: compressed_digested_result,
+          else: compressor.compress_file(file.filename, file.content)
+
+      with {:ok, compressed} <- compress_result do
         File.write!(
           Path.join(path, file.filename <> file_extension),
           compressed
@@ -203,12 +241,12 @@ defmodule Phoenix.Digester do
     %{file | digested_content: digested_content}
   end
 
-  @stylesheet_url_regex ~r{(url\(\s*)(\S+?)(\s*\))}
-  @quoted_text_regex ~r{\A(['"])(.+)\1\z}
-
   defp digest_stylesheet_asset_references(file, latest, with_vsn?) do
-    Regex.replace(@stylesheet_url_regex, file.content, fn _, open, url, close ->
-      case Regex.run(@quoted_text_regex, url) do
+    stylesheet_url_regex = ~r{(url\(\s*)(\S+?)(\s*\))}
+    quoted_text_regex = ~r{\A(['"])(.+)\1\z}
+
+    Regex.replace(stylesheet_url_regex, file.content, fn _, open, url, close ->
+      case Regex.run(quoted_text_regex, url) do
         [_, quote_symbol, url] ->
           open <>
             quote_symbol <> digested_url(url, file, latest, with_vsn?) <> quote_symbol <> close
@@ -219,18 +257,18 @@ defmodule Phoenix.Digester do
     end)
   end
 
-  @javascript_source_map_regex ~r{(//#\s*sourceMappingURL=\s*)(\S+)}
-
   defp digest_javascript_asset_references(file, latest) do
-    Regex.replace(@javascript_source_map_regex, file.content, fn _, source_map_text, url ->
+    javascript_source_map_regex = ~r{(//#\s*sourceMappingURL=\s*)(\S+)}
+
+    Regex.replace(javascript_source_map_regex, file.content, fn _, source_map_text, url ->
       source_map_text <> digested_url(url, file, latest, false)
     end)
   end
 
-  @javascript_map_file_regex ~r{(['"]file['"]:['"])([^,"']+)(['"])}
-
   defp digest_javascript_map_asset_references(file, latest) do
-    Regex.replace(@javascript_map_file_regex, file.content, fn _, open_text, url, close_text ->
+    javascript_map_file_regex = ~r{(['"]file['"]:['"])([^,"']+)(['"])}
+
+    Regex.replace(javascript_map_file_regex, file.content, fn _, open_text, url, close_text ->
       open_text <> digested_url(url, file, latest, false) <> close_text
     end)
   end
@@ -371,8 +409,8 @@ defmodule Phoenix.Digester do
   end
 
   defp remove_compressed_file(file, output_path) do
-    output_path
-    |> Path.join("#{file}.gz")
-    |> File.rm()
+    compressed_extensions()
+    |> Enum.map(fn extension -> Path.join(output_path, file <> extension) end)
+    |> Enum.each(&File.rm/1)
   end
 end

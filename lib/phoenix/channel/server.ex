@@ -3,7 +3,6 @@ defmodule Phoenix.Channel.Server do
   use GenServer, restart: :temporary
 
   require Logger
-  require Phoenix.Endpoint
 
   alias Phoenix.PubSub
   alias Phoenix.Socket
@@ -18,14 +17,22 @@ defmodule Phoenix.Channel.Server do
   def join(socket, channel, message, opts) do
     %{topic: topic, payload: payload, ref: ref, join_ref: join_ref} = message
 
-    starter = opts[:starter] || &PoolSupervisor.start_child/4
+    starter = opts[:starter] || (&PoolSupervisor.start_child/3)
     assigns = Map.merge(socket.assigns, Keyword.get(opts, :assigns, %{}))
-    socket = %{socket | topic: topic, channel: channel, join_ref: join_ref || ref, assigns: assigns}
+
+    socket = %{
+      socket
+      | topic: topic,
+        channel: channel,
+        join_ref: join_ref || ref,
+        assigns: assigns
+    }
+
     ref = make_ref()
     from = {self(), ref}
     child_spec = channel.child_spec({socket.endpoint, from})
 
-    case starter.(socket.endpoint, socket.handler, from, child_spec) do
+    case starter.(socket, from, child_spec) do
       {:ok, pid} ->
         send(pid, {Phoenix.Channel, payload, from, socket})
         mon_ref = Process.monitor(pid)
@@ -235,6 +242,8 @@ defmodule Phoenix.Channel.Server do
   @doc """
   Pushes a message with the given topic, event and payload
   to the given process.
+
+  Payloads are serialized before sending with the configured serializer.
   """
   def push(pid, join_ref, topic, event, payload, serializer)
       when is_binary(topic) and is_binary(event) do
@@ -245,6 +254,8 @@ defmodule Phoenix.Channel.Server do
 
   @doc """
   Replies to a given ref to the transport process.
+
+  Payloads are serialized before sending with the configured serializer.
   """
   def reply(pid, join_ref, ref, topic, {status, payload}, serializer)
       when is_binary(topic) do
@@ -288,7 +299,11 @@ defmodule Phoenix.Channel.Server do
   def handle_info({Phoenix.Channel, auth_payload, {pid, _} = from, socket}, ref) do
     Process.demonitor(ref)
     %{channel: channel, topic: topic, private: private} = socket
+    Process.put(:"$initial_call", {channel, :join, 3})
     Process.put(:"$callers", [pid])
+
+    # TODO: replace with Process.put_label/2 when we require Elixir 1.17
+    Process.put(:"$process_label", {Phoenix.Channel, channel, topic})
 
     socket = %{
       socket
@@ -319,6 +334,14 @@ defmodule Phoenix.Channel.Server do
     metadata = %{ref: ref, event: event, params: payload, socket: socket}
     :telemetry.execute([:phoenix, :channel_handled_in], %{duration: duration}, metadata)
     handle_in(result)
+  end
+
+  def handle_info(
+        %Broadcast{event: "phx_drain"},
+        %{transport_pid: transport_pid} = socket
+      ) do
+    send(transport_pid, :socket_drain)
+    {:stop, {:shutdown, :draining}, socket}
   end
 
   def handle_info(

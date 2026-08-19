@@ -76,9 +76,81 @@ defmodule Phoenix.SocketTest do
     test "merges keyword lists" do
       socket = %Phoenix.Socket{}
       socket = assign(socket, %{foo: :bar, abc: :def})
-      socket = assign(socket, [foo: :baz])
+      socket = assign(socket, foo: :baz)
       assert socket.assigns[:foo] == :baz
       assert socket.assigns[:abc] == :def
+    end
+
+    test "accepts functions" do
+      socket = %Phoenix.Socket{}
+      assert socket.assigns[:foo] == nil
+      socket = assign(socket, :foo, :bar)
+      assert socket.assigns[:foo] == :bar
+      socket = assign(socket, fn %{foo: :bar} -> [baz: :quux] end)
+      assert socket.assigns[:baz] == :quux
+    end
+  end
+
+  describe "drainer_spec/1" do
+    defmodule Endpoint do
+      use Phoenix.Endpoint, otp_app: :phoenix
+    end
+
+    defmodule DrainerSpecSocket do
+      use Phoenix.Socket
+
+      def id(_), do: "123"
+
+      def dynamic_drainer_config do
+        [
+          batch_size: 200,
+          batch_interval: 2_000,
+          shutdown: 20_000
+        ]
+      end
+    end
+
+    test "loads static drainer config" do
+      drainer_spec = [
+        batch_size: 100,
+        batch_interval: 1_000,
+        shutdown: 10_000
+      ]
+
+      assert DrainerSpecSocket.drainer_spec(drainer: drainer_spec, endpoint: Endpoint) ==
+               {Phoenix.Socket.PoolDrainer,
+                {Endpoint, DrainerSpecSocket, [endpoint: Endpoint, drainer: drainer_spec]}}
+    end
+
+    test "loads dynamic drainer config" do
+      drainer_spec = DrainerSpecSocket.dynamic_drainer_config()
+
+      assert DrainerSpecSocket.drainer_spec(
+               drainer: {DrainerSpecSocket, :dynamic_drainer_config, []},
+               endpoint: Endpoint
+             ) ==
+               {Phoenix.Socket.PoolDrainer,
+                {Endpoint, DrainerSpecSocket, [endpoint: Endpoint, drainer: drainer_spec]}}
+    end
+
+    test "returns ignore if drainer is set to false" do
+      assert DrainerSpecSocket.drainer_spec(drainer: false, endpoint: Endpoint) == :ignore
+    end
+  end
+
+  describe "__info__/2" do
+    alias Phoenix.Socket.Broadcast
+
+    test "disconnect broadcast emits close code 1001 so phoenix.js reconnects" do
+      # phoenix.js gates reconnects on `closeCode !== 1000`.
+      # Servers might interpret `{:shutdown, :disconnected}`
+      # as code 1000, so we pass 1001 explicitly to force a retry.
+      # See https://github.com/mtrudel/bandit/issues/582.
+      state = make_ref()
+      msg = %Broadcast{topic: "t", event: "disconnect", payload: %{}}
+
+      assert {:stop, {:shutdown, :disconnected}, 1001, ^state} =
+               Phoenix.Socket.__info__(msg, state)
     end
   end
 end

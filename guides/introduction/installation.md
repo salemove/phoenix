@@ -8,19 +8,13 @@ In order to build a Phoenix application, we will need a few dependencies install
 
 Please take a look at this list and make sure to install anything necessary for your system. Having dependencies installed in advance can prevent frustrating problems later on.
 
-## Elixir 1.12 or later
+If you just want to get started quickly, the [Up and Running](up_and_running.md) page includes a link to Phoenix Express, which will get Erlang, Elixir and Phoenix installed and running in seconds.
+
+## Elixir 1.17 or later
 
 Phoenix is written in Elixir, and our application code will also be written in Elixir. We won't get far in a Phoenix app without it! The Elixir site maintains a great [Installation Page](https://elixir-lang.org/install.html) to help.
 
-If we have just installed Elixir for the first time, we will need to install the Hex package manager as well. Hex is necessary to get a Phoenix app running (by installing dependencies) and to install any extra dependencies we might need along the way.
-
-Here's the command to install Hex (If you have Hex already installed, it will upgrade Hex to the latest version):
-
-```console
-$ mix local.hex
-```
-
-## Erlang 22 or later
+## Erlang 25 or later
 
 Elixir code compiles to Erlang byte code to run on the Erlang virtual machine. Without Erlang, Elixir code has no virtual machine to run on, so we need to install Erlang as well.
 
@@ -28,13 +22,13 @@ When we install Elixir using instructions from the Elixir [Installation Page](ht
 
 ## Phoenix
 
-To check that we are on Elixir 1.12 and Erlang 22 or later, run:
+To check that we are on Elixir 1.17 and Erlang 25 or later, run:
 
 ```console
 elixir -v
-Erlang/OTP 22 [erts-10.7] [source] [64-bit] [smp:8:8] [async-threads:10] [hipe] [kernel-poll:false] [dtrace]
+Erlang/OTP 25 [erts-13.0] [source] [64-bit] [smp:8:8] [async-threads:10] [hipe] [kernel-poll:false] [dtrace]
 
-Elixir 1.12.1
+Elixir 1.17.0
 ```
 
 Once we have Elixir and Erlang, we are ready to install the Phoenix application generator:

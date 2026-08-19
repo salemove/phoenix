@@ -6,7 +6,6 @@ defmodule Phoenix.Config do
   # at runtime using the `config/2` function.
   @moduledoc false
 
-  require Logger
   use GenServer
 
   @doc """
@@ -20,8 +19,8 @@ defmodule Phoenix.Config do
   @doc """
   Puts a given key-value pair in config.
   """
-  def put_new(module, key, value) do
-    :ets.insert_new(module, {key, value})
+  def put(module, key, value) do
+    :ets.insert(module, {key, value})
   end
 
   @doc """
@@ -52,7 +51,7 @@ defmodule Phoenix.Config do
       e ->
         case :ets.info(module) do
           :undefined ->
-            raise "could not find ets table for endpoint #{inspect(module)}. Make sure your endpoint is started and note you cannot access endpoint functions at compile-time."
+            raise "could not find ets table for endpoint #{inspect(module)}. Make sure your endpoint is started and note you cannot access endpoint functions at compile-time"
 
           _ ->
             reraise e, __STACKTRACE__
@@ -93,19 +92,19 @@ defmodule Phoenix.Config do
     merge(defaults, config)
   end
 
-  @doc """
-  Take 2 keyword lists and merge them recursively.
-
-  Used to merge configuration values into defaults.
-  """
-  def merge(a, b), do: Keyword.merge(a, b, &merger/3)
-
   defp fetch_config(otp_app, module) do
     case Application.fetch_env(otp_app, module) do
       {:ok, conf} -> conf
       :error -> []
     end
   end
+
+  @doc """
+  Take 2 keyword lists and merge them recursively.
+
+  Used to merge configuration values into defaults.
+  """
+  def merge(a, b), do: Keyword.merge(a, b, &merger/3)
 
   defp merger(_k, v1, v2) do
     if Keyword.keyword?(v1) and Keyword.keyword?(v2) do
@@ -152,6 +151,7 @@ defmodule Phoenix.Config do
         {:stop, :normal, :ok, {module, permanent}}
 
       true ->
+        clear_cache(module)
         {:reply, :ok, {module, permanent}}
     end
   end

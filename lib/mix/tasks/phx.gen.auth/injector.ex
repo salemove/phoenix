@@ -1,11 +1,10 @@
 defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   @moduledoc false
 
-  alias Mix.Phoenix.{Context, Schema}
+  alias Mix.Phoenix.Schema
   alias Mix.Tasks.Phx.Gen.Auth.HashingLibrary
 
   @type schema :: %Schema{}
-  @type context :: %Context{schema: schema}
 
   @doc """
   Injects a dependency into the contents of mix.exs
@@ -40,16 +39,9 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   end
 
   @doc """
-  Injects configuration for test environment into `file`.
+  Injects configuration into `file`.
   """
-  @spec test_config_inject(String.t(), HashingLibrary.t()) ::
-          {:ok, String.t()} | :already_injected | {:error, :unable_to_inject}
-  def test_config_inject(file, %HashingLibrary{} = hashing_library) when is_binary(file) do
-    code_to_inject =
-      hashing_library
-      |> test_config_code()
-      |> normalize_line_endings_to_file(file)
-
+  def config_inject(file, code_to_inject) when is_binary(file) and is_binary(code_to_inject) do
     inject_unless_contains(
       file,
       code_to_inject,
@@ -63,6 +55,20 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
         global: false
       )
     )
+  end
+
+  @doc """
+  Injects configuration for test environment into `file`.
+  """
+  @spec test_config_inject(String.t(), HashingLibrary.t()) ::
+          {:ok, String.t()} | :already_injected | {:error, :unable_to_inject}
+  def test_config_inject(file, %HashingLibrary{} = hashing_library) when is_binary(file) do
+    code_to_inject =
+      hashing_library
+      |> test_config_code()
+      |> normalize_line_endings_to_file(file)
+
+    config_inject(file, code_to_inject)
   end
 
   @doc """
@@ -87,14 +93,14 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   @router_plug_anchor_line "plug :put_secure_browser_headers"
 
   @doc """
-  Injects the fetch_current_<schema> plug into router's browser pipeline
+  Injects the fetch_current_scope_for_<schema> plug into router's browser pipeline
   """
-  @spec router_plug_inject(String.t(), context) ::
+  @spec router_plug_inject(String.t(), binding :: keyword()) ::
           {:ok, String.t()} | :already_injected | {:error, :unable_to_inject}
-  def router_plug_inject(file, %Context{schema: schema}) when is_binary(file) do
+  def router_plug_inject(file, binding) when is_binary(file) do
     inject_unless_contains(
       file,
-      router_plug_code(schema),
+      router_plug_code(binding),
       # Matches the entire line containing `anchor_line` and captures
       # the whitespace before the anchor. In the replace string
       #
@@ -111,35 +117,35 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   @doc """
   Instructions to provide the user when `inject_router_plug/2` fails.
   """
-  @spec router_plug_help_text(String.t(), context) :: String.t()
-  def router_plug_help_text(file_path, %Context{schema: schema}) do
+  @spec router_plug_help_text(String.t(), binding :: keyword()) :: String.t()
+  def router_plug_help_text(file_path, binding) do
     """
-    Add the #{router_plug_name(schema)} plug to the :browser pipeline in #{Path.relative_to_cwd(file_path)}:
+    Add the #{router_plug_name(binding)} plug to the :browser pipeline in #{Path.relative_to_cwd(file_path)}:
 
         pipeline :browser do
           ...
           #{@router_plug_anchor_line}
-          #{router_plug_code(schema)}
+          #{router_plug_code(binding)}
         end
     """
   end
 
-  defp router_plug_code(%Schema{} = schema) do
-    "plug " <> router_plug_name(schema)
+  defp router_plug_code(binding) do
+    "plug " <> router_plug_name(binding)
   end
 
-  defp router_plug_name(%Schema{} = schema) do
-    ":fetch_current_#{schema.singular}"
+  defp router_plug_name(binding) do
+    ":fetch_#{binding[:scope_config].scope.assign_key}_for_#{binding[:schema].singular}"
   end
 
   @doc """
   Injects a menu in the application layout
   """
-  def app_layout_menu_inject(%Schema{} = schema, template_str) do
+  def app_layout_menu_inject(binding, template_str) do
     with {:error, :unable_to_inject} <-
-           app_layout_menu_inject_at_end_of_nav_tag(template_str, schema),
+           app_layout_menu_inject_at_end_of_nav_tag(binding, template_str),
          {:error, :unable_to_inject} <-
-           app_layout_menu_inject_after_opening_body_tag(template_str, schema) do
+           app_layout_menu_inject_after_opening_body_tag(binding, template_str) do
       {:error, :unable_to_inject}
     end
   end
@@ -147,10 +153,11 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   @doc """
   Instructions to provide the user when `app_layout_menu_inject/2` fails.
   """
-  def app_layout_menu_help_text(file_path, %Schema{} = schema) do
-    {_dup_check, code} = app_layout_menu_code_to_inject(schema)
+  def app_layout_menu_help_text(file_path, binding) do
+    {_dup_check, code} = app_layout_menu_code_to_inject(binding)
+
     """
-    Add the following #{schema.singular} menu items to your #{Path.relative_to_cwd(file_path)} layout file:
+    Add the following #{binding[:schema].singular} menu items to your #{Path.relative_to_cwd(file_path)} layout file:
 
     #{code}
     """
@@ -159,18 +166,30 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
   @doc """
   Menu code to inject into the application layout template.
   """
-  def app_layout_menu_code_to_inject(%Schema{} = schema, padding \\ 4, newline \\ "\n") do
-    already_injected_str = "#{schema.route_prefix}/log_in"
+  def app_layout_menu_code_to_inject(binding, padding \\ 4, newline \\ "\n") do
+    schema = binding[:schema]
+    scope_config = binding[:scope_config]
+    already_injected_str = "#{schema.route_prefix}/log-in"
 
     template = """
-    <ul>
-      <%= if @current_#{schema.singular} do %>
-        <li><%= @current_#{schema.singular}.email %></li>
-        <li><.link href={~p"#{schema.route_prefix}/settings"}>Settings</.link></li>
-        <li><.link href={~p"#{schema.route_prefix}/log_out"} method="delete">Log out</.link></li>
+    <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
+      <%= if @#{scope_config.scope.assign_key} do %>
+        <li>
+          {@#{scope_config.scope.assign_key}.#{schema.singular}.email}
+        </li>
+        <li>
+          <.link href={~p"#{schema.route_prefix}/settings"}>Settings</.link>
+        </li>
+        <li>
+          <.link href={~p"#{schema.route_prefix}/log-out"} method="delete">Log out</.link>
+        </li>
       <% else %>
-        <li><.link href={~p"#{schema.route_prefix}/register"}>Register</.link></li>
-        <li><.link href={~p"#{schema.route_prefix}/log_in"}>Log in</.link></li>
+        <li>
+          <.link href={~p"#{schema.route_prefix}/register"}>Register</.link>
+        </li>
+        <li>
+          <.link href={~p"#{schema.route_prefix}/log-in"}>Log in</.link>
+        </li>
       <% end %>
     </ul>\
     """
@@ -189,9 +208,9 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
     {String.length(padding), newline}
   end
 
-  defp app_layout_menu_inject_at_end_of_nav_tag(file, schema) do
+  defp app_layout_menu_inject_at_end_of_nav_tag(binding, file) do
     {padding, newline} = formatting_info(file, "<\/nav>")
-    {dup_check, code} = app_layout_menu_code_to_inject(schema, padding, newline)
+    {dup_check, code} = app_layout_menu_code_to_inject(binding, padding, newline)
 
     inject_unless_contains(
       file,
@@ -201,10 +220,10 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
     )
   end
 
-  defp app_layout_menu_inject_after_opening_body_tag(file, schema) do
+  defp app_layout_menu_inject_after_opening_body_tag(binding, file) do
     anchor_line = "<body"
     {padding, newline} = formatting_info(file, anchor_line)
-    {dup_check, code} = app_layout_menu_code_to_inject(schema, padding, newline)
+    {dup_check, code} = app_layout_menu_code_to_inject(binding, padding, newline)
 
     inject_unless_contains(
       file,
@@ -249,15 +268,47 @@ defmodule Mix.Tasks.Phx.Gen.Auth.Injector do
     if String.contains?(code, code_to_inject) do
       :already_injected
     else
-      new_code =
-        code
-        |> String.trim_trailing()
-        |> String.trim_trailing("end")
-        |> Kernel.<>(code_to_inject)
-        |> Kernel.<>("end\n")
-
-      {:ok, new_code}
+      {:ok,
+       inject_before_dev_routes_scope(code, code_to_inject) ||
+         inject_before_final_end_fallback(code, code_to_inject)}
     end
+  end
+
+  defp inject_before_dev_routes_scope(code, code_to_inject) do
+    case split_before_dev_routes(String.split(code, "\n"), []) do
+      {before_dev_routes, dev_routes} ->
+        join_injected(before_dev_routes, code_to_inject, dev_routes)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp split_before_dev_routes([line | rest], acc) do
+    if String.contains?(line, "if Application.compile_env") and
+         String.contains?(line, ":dev_routes") do
+      {dev_route_comments, before_dev_routes} =
+        Enum.split_while(acc, &(String.trim_leading(&1) |> String.starts_with?("#")))
+
+      {Enum.reverse(before_dev_routes), Enum.reverse(dev_route_comments, [line | rest])}
+    else
+      split_before_dev_routes(rest, [line | acc])
+    end
+  end
+
+  defp split_before_dev_routes([], _acc), do: nil
+
+  defp join_injected(before_dev_routes, code_to_inject, dev_routes) do
+    code_to_inject = code_to_inject |> String.trim("\n") |> String.split("\n")
+    Enum.join(before_dev_routes ++ code_to_inject ++ [""] ++ dev_routes, "\n")
+  end
+
+  defp inject_before_final_end_fallback(code, code_to_inject) do
+    code
+    |> String.trim_trailing()
+    |> String.trim_trailing("end")
+    |> Kernel.<>(code_to_inject)
+    |> Kernel.<>("end\n")
   end
 
   @spec ensure_not_already_injected(String.t(), String.t()) :: :ok | :already_injected

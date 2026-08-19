@@ -3,17 +3,30 @@ defmodule Phoenix.CodeReloaderTest do
   use RouterHelper
 
   defmodule Endpoint do
-    def config(:reloadable_compilers) do
-      [:unknown_compiler, :elixir]
-    end
-
-    def config(:reloadable_apps) do
-      nil
-    end
+    def config(:reloadable_compilers), do: [:unknown_compiler, :elixir]
+    def config(:reloadable_apps), do: nil
   end
 
-  def reload(_) do
-    {:error, "oops"}
+  def reload(_, _) do
+    {:error, "oops \e[31merror"}
+  end
+
+  # Booting Elixir puts Mix in the code path but does not start it,
+  # which is how deployments that keep Mix around look to Phoenix.
+  @boot_without_mix """
+  true = Code.ensure_loaded?(Mix.Project)
+  nil = Process.whereis(Mix.ProjectStack)
+  {:ok, _} = Application.ensure_all_started(:phoenix)
+  IO.write("phoenix booted")
+  """
+
+  test "boots when Mix is in the code path but not started" do
+    args =
+      Enum.flat_map(:code.get_path(), &["-pa", List.to_string(&1)]) ++
+        ["-e", @boot_without_mix]
+
+    assert {output, 0} = System.cmd("elixir", args, stderr_to_stdout: true)
+    assert output =~ "phoenix booted"
   end
 
   @tag :capture_log
@@ -43,22 +56,28 @@ defmodule Phoenix.CodeReloaderTest do
     :erlang.trace(pid, true, [:receive])
 
     opts = Phoenix.CodeReloader.init([])
-    conn = conn(:get, "/")
-           |> Plug.Conn.put_private(:phoenix_endpoint, Endpoint)
-           |> Phoenix.CodeReloader.call(opts)
+
+    conn =
+      conn(:get, "/")
+      |> Plug.Conn.put_private(:phoenix_endpoint, Endpoint)
+      |> Phoenix.CodeReloader.call(opts)
+
     assert conn.state == :unset
 
-    assert_receive {:trace, ^pid, :receive, {_, _, {:reload!, Endpoint}}}
+    assert_receive {:trace, ^pid, :receive, {_, _, {:reload!, Endpoint, _}}}
   end
 
   test "renders compilation error on failure" do
-    opts = Phoenix.CodeReloader.init(reloader: &__MODULE__.reload/1)
-    conn = conn(:get, "/")
-           |> Plug.Conn.put_private(:phoenix_endpoint, Endpoint)
-           |> Phoenix.CodeReloader.call(opts)
-    assert conn.state  == :sent
+    opts = Phoenix.CodeReloader.init(reloader: &__MODULE__.reload/2)
+
+    conn =
+      conn(:get, "/")
+      |> Plug.Conn.put_private(:phoenix_endpoint, Endpoint)
+      |> Phoenix.CodeReloader.call(opts)
+
+    assert conn.state == :sent
     assert conn.status == 500
-    assert conn.resp_body =~ "oops"
+    assert conn.resp_body =~ "oops error"
     assert conn.resp_body =~ "CompileError"
     assert conn.resp_body =~ "Compilation error"
   end

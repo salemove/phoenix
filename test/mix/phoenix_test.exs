@@ -3,6 +3,47 @@ defmodule Mix.PhoenixTest do
 
   doctest Mix.Phoenix, import: true
 
+  test "copy_from/4 uses file with .eex extension when it exists" do
+    tmp_dir = tmp_path!()
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    templates_dir = Path.join(tmp_dir, "templates")
+    File.mkdir_p!(templates_dir)
+    File.write!(Path.join(templates_dir, "hello.ex.eex"), "<%= greeting %>")
+    File.write!(Path.join(templates_dir, "hello.ex"), "old")
+
+    Mix.Phoenix.copy_from(
+      [tmp_dir],
+      "templates",
+      [greeting: "hi"],
+      [{:eex, "hello.ex.eex", Path.join(tmp_dir, "output.ex")}]
+    )
+
+    assert File.read!(Path.join(tmp_dir, "output.ex")) == "hi"
+  end
+
+  test "copy_from/4 falls back to file without .eex extension for backward compatibility" do
+    tmp_dir = tmp_path!()
+    on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+    templates_dir = Path.join(tmp_dir, "templates")
+    File.mkdir_p!(templates_dir)
+    File.write!(Path.join(templates_dir, "hello.ex"), "<%= greeting %>")
+
+    Mix.Phoenix.copy_from(
+      [tmp_dir],
+      "templates",
+      [greeting: "hi"],
+      [{:eex, "hello.ex.eex", Path.join(tmp_dir, "output.ex")}]
+    )
+
+    assert File.read!(Path.join(tmp_dir, "output.ex")) == "hi"
+  end
+
+  defp tmp_path! do
+    Path.join([System.tmp_dir!(), "phx_copy_from_test_#{System.unique_integer([:positive])}"])
+  end
+
   test "base/0 returns the module base based on the Mix application" do
     assert Mix.Phoenix.base() == "Phoenix"
     Application.put_env(:phoenix, :namespace, Phoenix.Sample.App)
@@ -18,6 +59,7 @@ defmodule Mix.PhoenixTest do
   test "attrs/1 defaults each type" do
     attrs = [
       "logins:array:string",
+      "lottery_numbers:array:integer",
       "age:integer",
       "temp:float",
       "temp_2:decimal",
@@ -29,19 +71,21 @@ defmodule Mix.PhoenixTest do
       "joined:naive_datetime",
       "token:uuid"
     ]
+
     assert Mix.Phoenix.Schema.attrs(attrs) == [
-      logins: {:array, :string},
-      age: :integer,
-      temp: :float,
-      temp_2: :decimal,
-      admin: :boolean,
-      meta: :map,
-      name: :text,
-      date_of_birth: :date,
-      happy_hour: :time,
-      joined: :naive_datetime,
-      token: :uuid
-    ]
+             logins: {:array, :string},
+             lottery_numbers: {:array, :integer},
+             age: :integer,
+             temp: :float,
+             temp_2: :decimal,
+             admin: :boolean,
+             meta: :map,
+             name: :text,
+             date_of_birth: :date,
+             happy_hour: :time,
+             joined: :naive_datetime,
+             token: :uuid
+           ]
   end
 
   test "attrs/1 raises with an unknown type" do
@@ -70,7 +114,7 @@ defmodule Mix.PhoenixTest do
     ]
 
     assert Mix.Phoenix.Schema.params(params) == %{
-             logins: [],
+             logins: ["option1", "option2"],
              age: 42,
              temp: 120.5,
              temp_2: "120.5",
@@ -101,56 +145,34 @@ defmodule Mix.PhoenixTest do
       )
 
   test "live_form_value/1" do
-    assert Mix.Phoenix.Schema.live_form_value(~D[2020-10-09]) == %{day: 9, month: 10, year: 2020}
-    assert Mix.Phoenix.Schema.live_form_value(~T[14:00:00]) == %{hour: 14, minute: 00}
+    assert Mix.Phoenix.Schema.live_form_value(~D[2020-10-09]) == "2020-10-09"
+    assert Mix.Phoenix.Schema.live_form_value(~T[14:00:00]) == "14:00"
+    assert Mix.Phoenix.Schema.live_form_value(~T[14:01:00]) == "14:01"
+    assert Mix.Phoenix.Schema.live_form_value(~T[14:15:40]) == "14:15"
 
-    assert Mix.Phoenix.Schema.live_form_value(~N[2020-10-09 14:00:00]) == %{
-             day: 9,
-             month: 10,
-             year: 2020,
-             hour: 14,
-             minute: 00
-           }
+    assert Mix.Phoenix.Schema.live_form_value(~N[2020-10-09 14:00:00]) == "2020-10-09T14:00:00"
 
-    assert Mix.Phoenix.Schema.live_form_value(~U[2020-10-09T14:00:00Z]) == %{
-             day: 9,
-             month: 10,
-             year: 2020,
-             hour: 14,
-             minute: 00
-           }
+    assert Mix.Phoenix.Schema.live_form_value(~U[2020-10-09T14:00:00Z]) ==
+             "2020-10-09T14:00:00Z"
+
+    assert Mix.Phoenix.Schema.live_form_value([1]) == [1]
+    assert Mix.Phoenix.Schema.live_form_value(["option1"]) == ["option1"]
 
     assert Mix.Phoenix.Schema.live_form_value(:value) == :value
   end
 
   test "invalid_form_value/1" do
     assert ~D[2020-10-09]
-           |> Mix.Phoenix.Schema.live_form_value()
-           |> Mix.Phoenix.Schema.invalid_form_value() == %{day: 30, month: 2, year: 2020}
+           |> Mix.Phoenix.Schema.invalid_form_value() == "2022-00"
 
     assert ~T[14:00:00]
-           |> Mix.Phoenix.Schema.live_form_value()
            |> Mix.Phoenix.Schema.invalid_form_value() == %{hour: 14, minute: 00}
 
     assert ~N[2020-10-09 14:00:00]
-           |> Mix.Phoenix.Schema.live_form_value()
-           |> Mix.Phoenix.Schema.invalid_form_value() == %{
-             day: 30,
-             month: 2,
-             year: 2020,
-             hour: 14,
-             minute: 00
-           }
+           |> Mix.Phoenix.Schema.invalid_form_value() == "2022-00"
 
     assert ~U[2020-10-09T14:00:00Z]
-           |> Mix.Phoenix.Schema.live_form_value()
-           |> Mix.Phoenix.Schema.invalid_form_value() == %{
-             day: 30,
-             month: 02,
-             year: 2020,
-             hour: 14,
-             minute: 00
-           }
+           |> Mix.Phoenix.Schema.invalid_form_value() == "2022-00"
 
     assert Mix.Phoenix.Schema.invalid_form_value(true) == false
     assert Mix.Phoenix.Schema.invalid_form_value(:anything) == nil

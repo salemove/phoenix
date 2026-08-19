@@ -6,12 +6,15 @@ defmodule Phoenix.Router do
     defexception plug_status: 404, message: "no route found", conn: nil, router: nil
 
     def exception(opts) do
-      conn   = Keyword.fetch!(opts, :conn)
+      conn = Keyword.fetch!(opts, :conn)
       router = Keyword.fetch!(opts, :router)
-      path   = "/" <> Enum.join(conn.path_info, "/")
+      path = "/" <> Enum.join(conn.path_info, "/")
 
-      %NoRouteError{message: "no route found for #{conn.method} #{path} (#{inspect router})",
-                    conn: conn, router: router}
+      %NoRouteError{
+        message: "no route found for #{conn.method} #{path} (#{inspect(router)})",
+        conn: conn,
+        router: router
+      }
     end
   end
 
@@ -41,6 +44,16 @@ defmodule Phoenix.Router do
 
   Phoenix's router is extremely efficient, as it relies on Elixir
   pattern matching for matching routes and serving requests.
+
+  ## Options
+
+    * `:helpers` - whether to generate route helpers. Defaults to `true`.
+      Helpers are deprecated, see the "Helpers" section below for more information
+
+    * `:group_by` - when set to `:verb`, Phoenix groups route clauses per HTTP
+      verb during compilation. This can reduce compilation times for large
+      routers. When enabled, all `match :*` and `forward` routes must be defined
+      at the end of the router
 
   ## Routing
 
@@ -100,16 +113,44 @@ defmodule Phoenix.Router do
       GET /pages/hey/there/world
       %{"page" => "y", "rest" => ["there" "world"]} = params
 
-  ## Helpers
+  > #### Why the macros? {: .info}
+  >
+  > Phoenix does its best to keep the usage of macros low. You may have noticed,
+  > however, that the `Phoenix.Router` relies heavily on macros. Why is that?
+  >
+  > We use `get`, `post`, `put`, and `delete` to define your routes. We use macros
+  > for two purposes:
+  >
+  > * They define the routing engine, used on every request, to choose which
+  >   controller to dispatch the request to. Thanks to macros, Phoenix compiles
+  >   all of your routes to a single case-statement with pattern matching rules,
+  >   which is heavily optimized by the Erlang VM
+  >
+  > * For each route you define, we also define metadata to implement `Phoenix.VerifiedRoutes`.
+  >   As we will soon learn, verified routes allows to us to reference any route
+  >   as if it is a plain looking string, except it is verified by the compiler
+  >   to be valid (making it much harder to ship broken links, forms, mails, etc
+  >   to production)
+  >
+  > In other words, the router relies on macros to build applications that are
+  > faster and safer. Also remember that macros in Elixir are compile-time only,
+  > which gives plenty of stability after the code is compiled. Phoenix also provides
+  > introspection for all defined routes via `mix phx.routes`.
 
-  Phoenix automatically generates a module `Helpers` inside your router
-  by default, which contains named helpers to help developers generate and keep
-  their routes up to date. Helpers can be disabled by passing `helpers: false`
-  to `use Phoenix.Router`.
+  ## Generating routes
 
-  See the `Phoenix.VerifiedRoutes` documentation for `~p` based route generation
-  which is the preferred way to generate route paths and URLs with compile-time
-  verification.
+  For generating routes inside your application,  see the `Phoenix.VerifiedRoutes`
+  documentation for `~p` based route generation which is the preferred way to
+  generate route paths and URLs with compile-time verification.
+
+  Phoenix also supports generating function helpers, which was the default
+  mechanism in Phoenix v1.6 and earlier. We will explore it next.
+
+  ### Helpers (deprecated)
+
+  Phoenix generates a module `Helpers` inside your router by default, which contains
+  named helpers to help developers generate and keep their routes up to date.
+  Helpers can be disabled by passing `helpers: false` to `use Phoenix.Router`.
 
   Helpers are automatically generated based on the controller name.
   For example, the route:
@@ -165,29 +206,10 @@ defmodule Phoenix.Router do
       end
 
   The route above will dispatch to `MyAppWeb.PageController`. This syntax
-  is not only convenient for developers, since we don't have to repeat
-  the `MyAppWeb.` prefix on all routes, but it also allows Phoenix to put
-  less pressure on the Elixir compiler. If instead we had written:
+  is convenient for developers, since we don't have to repeat `MyAppWeb.`
+  prefix on all routes
 
-      get "/pages/:id", MyAppWeb.PageController, :show
-
-  The Elixir compiler would infer that the router depends directly on
-  `MyAppWeb.PageController`, which is not true. By using scopes, Phoenix
-  can properly hint to the Elixir compiler the controller is not an
-  actual dependency of the router. This provides more efficient
-  compilation times.
-
-  Scopes allow us to scope on any path or even on the helper name:
-
-      scope "/v1", MyAppWeb, host: "api." do
-        get "/pages/:id", PageController, :show
-      end
-
-  For example, the route above will match on the path `"/api/v1/pages/1"`
-  and the named route will be `api_v1_page_path`, as expected from the
-  values given to `scope/2` option.
-
-  Like all paths you can define dynamic segments that will be applied as
+  Like all paths, you can define dynamic segments that will be applied as
   parameters in the controller:
 
       scope "/api/:version", MyAppWeb do
@@ -202,7 +224,7 @@ defmodule Phoenix.Router do
   to generate "RESTful" routes to a given resource:
 
       defmodule MyAppWeb.Router do
-        use Phoenix.Router
+        use Phoenix.Router, helpers: false
 
         resources "/pages", PageController, only: [:show]
         resources "/users", UserController, except: [:delete]
@@ -213,14 +235,14 @@ defmodule Phoenix.Router do
   routes included in the router above:
 
       $ mix phx.routes
-      page_path  GET    /pages/:id       PageController.show/2
-      user_path  GET    /users           UserController.index/2
-      user_path  GET    /users/:id/edit  UserController.edit/2
-      user_path  GET    /users/new       UserController.new/2
-      user_path  GET    /users/:id       UserController.show/2
-      user_path  POST   /users           UserController.create/2
-      user_path  PATCH  /users/:id       UserController.update/2
-                 PUT    /users/:id       UserController.update/2
+      GET    /pages/:id       PageController.show/2
+      GET    /users           UserController.index/2
+      GET    /users/:id/edit  UserController.edit/2
+      GET    /users/new       UserController.new/2
+      GET    /users/:id       UserController.show/2
+      POST   /users           UserController.create/2
+      PATCH  /users/:id       UserController.update/2
+      PUT    /users/:id       UserController.update/2
 
   One can also pass a router explicitly as an argument to the task:
 
@@ -262,59 +284,12 @@ defmodule Phoenix.Router do
   Note that router pipelines are only invoked after a route is found.
   No plug is invoked in case no matches were found.
 
-  ## How to organize my routes?
+  ## Learn more
 
-  In Phoenix, we tend to define several pipelines, that provide specific
-  functionality. For example, the `pipeline :browser` above includes plugs
-  that are common for all routes that are meant to be accessed by a browser.
-  Similarly, if you are also serving `:api` requests, you would have a separate
-  `:api` pipeline that validates information specific to your endpoints.
-
-  Perhaps more importantly, it is also very common to define pipelines specific
-  to authentication and authorization. For example, you might have a pipeline
-  that requires all users are authenticated. Another pipeline may enforce only
-  admin users can access certain routes.
-
-  Once your pipelines are defined, you reuse the pipelines in the desired
-  scopes, grouping your routes around their pipelines. For example, imagine
-  you are building a blog. Anyone can read a post, but only authenticated
-  users can create them. Your routes could look like this:
-
-      pipeline :browser do
-        plug :fetch_session
-        plug :accepts, ["html"]
-      end
-
-      pipeline :auth do
-        plug :ensure_authenticated
-      end
-
-      scope "/" do
-        pipe_through [:browser]
-
-        get "/posts", PostController, :index
-        get "/posts/:id", PostController, :show
-      end
-
-      scope "/" do
-        pipe_through [:browser, :auth]
-
-        get "/posts/new", PostController, :new
-        post "/posts", PostController, :create
-      end
-
-  Note in the above how the routes are split across different scopes.
-  While the separation can be confusing at first, it has one big upside:
-  it is very easy to inspect your routes and see all routes that, for
-  example, require authentication and which ones do not. This helps with
-  auditing and making sure your routes have the proper scope.
-
-  You can create as few or as many scopes as you want. Because pipelines
-  are reusable across scopes, they help encapsulate common functionality
-  and you can compose them as necessary on each scope you define.
+  See the [Routing](routing.md) guide for more information and examples
+  within an actual Phoenix application.
   """
 
-  # TODO: Deprecate trailing_slash? and remove :as from the docs.
   alias Phoenix.Router.{Resource, Scope, Route, Helpers}
 
   @http_methods [:get, :post, :put, :patch, :delete, :options, :connect, :trace, :head]
@@ -325,14 +300,17 @@ defmodule Phoenix.Router do
       unquote(prelude(opts))
       unquote(defs())
       unquote(match_dispatch())
+      unquote(verified_routes())
     end
   end
 
   defp prelude(opts) do
     quote do
+      opts = unquote(opts)
       Module.register_attribute(__MODULE__, :phoenix_routes, accumulate: true)
-      @phoenix_forwards %{}
-      @phoenix_helpers Keyword.get(unquote(opts), :helpers, true)
+      # TODO: Require :helpers to be explicit given
+      @phoenix_helpers Keyword.get(opts, :helpers, true)
+      @phoenix_router_group_by Keyword.get(opts, :group_by, nil)
 
       import Phoenix.Router
 
@@ -360,30 +338,52 @@ defmodule Phoenix.Router do
         opts = resource.route
 
         if resource.singleton do
-          Enum.each resource.actions, fn
-            :show    -> get    path,            ctrl, :show, opts
-            :new     -> get    path <> "/new",  ctrl, :new, opts
-            :edit    -> get    path <> "/edit", ctrl, :edit, opts
-            :create  -> post   path,            ctrl, :create, opts
-            :delete  -> delete path,            ctrl, :delete, opts
-            :update  ->
+          Enum.each(resource.actions, fn
+            :show ->
+              get path, ctrl, :show, opts
+
+            :new ->
+              get path <> "/new", ctrl, :new, opts
+
+            :edit ->
+              get path <> "/edit", ctrl, :edit, opts
+
+            :create ->
+              post path, ctrl, :create, opts
+
+            :delete ->
+              delete path, ctrl, :delete, opts
+
+            :update ->
               patch path, ctrl, :update, opts
-              put   path, ctrl, :update, Keyword.put(opts, :as, nil)
-          end
+              put path, ctrl, :update, Keyword.put(opts, :as, nil)
+          end)
         else
           param = resource.param
 
-          Enum.each resource.actions, fn
-            :index   -> get    path,                             ctrl, :index, opts
-            :show    -> get    path <> "/:" <> param,            ctrl, :show, opts
-            :new     -> get    path <> "/new",                   ctrl, :new, opts
-            :edit    -> get    path <> "/:" <> param <> "/edit", ctrl, :edit, opts
-            :create  -> post   path,                             ctrl, :create, opts
-            :delete  -> delete path <> "/:" <> param,            ctrl, :delete, opts
-            :update  ->
+          Enum.each(resource.actions, fn
+            :index ->
+              get path, ctrl, :index, opts
+
+            :show ->
+              get path <> "/:" <> param, ctrl, :show, opts
+
+            :new ->
+              get path <> "/new", ctrl, :new, opts
+
+            :edit ->
+              get path <> "/:" <> param <> "/edit", ctrl, :edit, opts
+
+            :create ->
+              post path, ctrl, :create, opts
+
+            :delete ->
+              delete path <> "/:" <> param, ctrl, :delete, opts
+
+            :update ->
               patch path <> "/:" <> param, ctrl, :update, opts
-              put   path <> "/:" <> param, ctrl, :update, Keyword.put(opts, :as, nil)
-          end
+              put path <> "/:" <> param, ctrl, :update, Keyword.put(opts, :as, nil)
+          end)
         end
       end
     end
@@ -392,7 +392,10 @@ defmodule Phoenix.Router do
   @doc false
   def __call__(
         %{private: %{phoenix_router: router, phoenix_bypass: {router, pipes}}} = conn,
-        {metadata, prepare, pipeline, _}
+        metadata,
+        prepare,
+        pipeline,
+        _
       ) do
     conn = prepare.(conn, metadata)
 
@@ -402,11 +405,11 @@ defmodule Phoenix.Router do
     end
   end
 
-  def __call__(%{private: %{phoenix_bypass: :all}} = conn, {metadata, prepare, _, _}) do
+  def __call__(%{private: %{phoenix_bypass: :all}} = conn, metadata, prepare, _, _) do
     prepare.(conn, metadata)
   end
 
-  def __call__(conn, {metadata, prepare, pipeline, {plug, opts}}) do
+  def __call__(conn, metadata, prepare, pipeline, {plug, opts}) do
     conn = prepare.(conn, metadata)
     start = System.monotonic_time()
     measurements = %{system_time: System.system_time()}
@@ -448,7 +451,7 @@ defmodule Phoenix.Router do
   end
 
   defp match_dispatch() do
-    quote location: :keep do
+    quote location: :keep, generated: true do
       @behaviour Plug
 
       @doc """
@@ -464,52 +467,66 @@ defmodule Phoenix.Router do
       """
       def call(conn, _opts) do
         %{method: method, path_info: path_info, host: host} = conn = prepare(conn)
+        decoded = Enum.map(path_info, &URI.decode/1)
 
-        decoded =
-          # TODO: Remove try/catch on Elixir v1.13 as decode no longer raises
-          try do
-            Enum.map(path_info, &URI.decode/1)
-          rescue
-            ArgumentError ->
-              raise MalformedURIError, "malformed URI path: #{inspect conn.request_path}"
-          end
+        case __match_route__(method, decoded, host) do
+          {metadata, prepare, pipeline, plug_opts} ->
+            Phoenix.Router.__call__(conn, metadata, prepare, pipeline, plug_opts)
 
-        with {_forward_plug, _warn_on_verify?, fun} <- __match_route__(decoded),
-             {_, _, _, _} = match <- fun.(method, host) do
-          Phoenix.Router.__call__(conn, match)
-        else
-          _ -> raise NoRouteError, conn: conn, router: __MODULE__
+          :error ->
+            raise NoRouteError, conn: conn, router: __MODULE__
         end
       end
 
-      defoverridable [init: 1, call: 2]
+      defoverridable init: 1, call: 2
+    end
+  end
+
+  defp verified_routes() do
+    quote location: :keep, generated: true do
+      @behaviour Phoenix.VerifiedRoutes
+
+      def formatted_routes(_) do
+        Phoenix.Router.__formatted_routes__(__MODULE__)
+      end
+
+      def verified_route?(_, split_path) do
+        Phoenix.Router.__verified_route__?(__MODULE__, split_path)
+      end
     end
   end
 
   @doc false
   defmacro __before_compile__(env) do
     routes = env.module |> Module.get_attribute(:phoenix_routes) |> Enum.reverse()
-    forwards = env.module |> Module.get_attribute(:phoenix_forwards)
-    routes_with_exprs = Enum.map(routes, &{&1, Route.exprs(&1, forwards)})
-    helpers? = Module.get_attribute(env.module, :phoenix_helpers)
+    routes_with_exprs = Enum.map(routes, &{&1, Route.exprs(&1)})
 
-    if helpers?, do: Helpers.define(env, routes_with_exprs)
-
-    group = Enum.group_by(routes_with_exprs, fn {_route, exprs} -> exprs.path end)
-    {matches, _} = Enum.flat_map_reduce(routes_with_exprs, {group, %{}}, &build_match/2)
-
-    match_catch_all =
-      quote generated: true do
-        @doc false
-        def __match_route__(_path_info) do
-          :error
-        end
+    helpers =
+      if Module.get_attribute(env.module, :phoenix_helpers) do
+        Helpers.define(env, routes_with_exprs)
       end
 
-    forwards =
-      for {plug, script_name} <- forwards do
-        quote do
-          def __forward__(unquote(plug)), do: unquote(script_name)
+    {matches, {pipelines, _}} =
+      build_matches(
+        routes_with_exprs,
+        Module.get_attribute(env.module, :phoenix_router_group_by),
+        env
+      )
+
+    routes_per_path =
+      Enum.group_by(routes_with_exprs, &elem(&1, 1).path, &elem(&1, 0))
+
+    verifies =
+      routes_with_exprs
+      |> Enum.map(&elem(&1, 1).path)
+      |> Enum.uniq()
+      |> Enum.map(&build_verify(&1, routes_per_path))
+
+    verify_catch_all =
+      quote generated: true do
+        @doc false
+        def __verify_route__(_path_info) do
+          :error
         end
       end
 
@@ -520,11 +537,14 @@ defmodule Phoenix.Router do
       end
 
     checks =
-      for %{line: line, plug: plug} <- routes, into: %{} do
-        quote line: line do
-          {_ = &unquote(plug).init/1, []}
-        end
-      end
+      routes
+      |> Enum.map(fn %{line: line, metadata: metadata, plug: plug} ->
+        {line, Map.get(metadata, :mfa, {plug, :init, 1})}
+      end)
+      |> Enum.uniq()
+      |> Enum.map(fn {line, {module, function, arity}} ->
+        quote line: line, do: _ = &(unquote(module).unquote(function) / unquote(arity))
+      end)
 
     keys = [:verb, :path, :plug, :plug_opts, :helper, :metadata]
     routes = Enum.map(routes, &Map.take(&1, keys))
@@ -534,60 +554,223 @@ defmodule Phoenix.Router do
       def __routes__, do: unquote(Macro.escape(routes))
 
       @doc false
-      def __checks__, do: unquote({:__block__, [], Map.keys(checks)})
+      def __checks__, do: unquote({:__block__, [], checks})
 
       @doc false
-      if unquote(helpers?) do
-        def __helpers__, do: __MODULE__.Helpers
-      else
-        def __helpers__, do: nil
-      end
+      def __helpers__, do: unquote(helpers)
 
       defp prepare(conn) do
         merge_private(conn, [{:phoenix_router, __MODULE__}, {__MODULE__, conn.script_name}])
       end
 
+      unquote(pipelines)
+      unquote(verifies)
+      unquote(verify_catch_all)
       unquote(matches)
-      unquote(match_catch_all)
-      unquote(forwards)
       unquote(forward_catch_all)
     end
   end
 
-  defp build_match({route, expr}, {groups, known_pipes}) do
-    # We need to process the routes in the order they are defined
-    # while grouping them. So we keep the original route ordering
-    # and unpack the groups.
-    {grouped_routes_with_exprs, groups} = Map.pop(groups, expr.path)
+  defp build_verify(path, routes_per_path) do
+    routes = Map.get(routes_per_path, path)
+    warn_on_verify? = Enum.all?(routes, & &1.warn_on_verify?)
 
-    if grouped_routes_with_exprs do
-      {clauses, pipes, known_pipes} =
-        Enum.reduce(grouped_routes_with_exprs, {[], [], known_pipes}, &build_match_group/2)
-
-      forward_plug =
-        Enum.find_value(grouped_routes_with_exprs, fn
-          {%{kind: :forward, plug: plug}, _expr} -> plug
-          {_, _} -> nil
-        end)
-
-      catch_all =
+    case Enum.find(routes, &(&1.kind == :forward)) do
+      %{metadata: %{forward: forward}, plug: plug, plug_opts: plug_opts} ->
         quote generated: true do
-          _, _ -> :error
-        end
+          def __forward__(unquote(plug)) do
+            unquote(forward)
+          end
 
-      block =
-        quote line: route.line do
-          unquote_splicing(pipes)
-
-          def __match_route__(unquote(expr.path)) do
-            {unquote(forward_plug), unquote(route.warn_on_verify?), unquote({:fn, [], Enum.reverse(clauses, catch_all)})}
+          def __verify_route__(unquote(path)) do
+            {{unquote(plug), unquote(forward), unquote(Macro.escape(plug_opts))},
+             unquote(warn_on_verify?)}
           end
         end
 
-      {[block], {groups, known_pipes}}
-    else
-      {[], {groups, known_pipes}}
+      _ ->
+        quote generated: true do
+          def __verify_route__(unquote(path)) do
+            {nil, unquote(warn_on_verify?)}
+          end
+        end
     end
+  end
+
+  defp build_matches(routes_exprs, nil, _env) do
+    {matches, acc} = Enum.map_reduce(routes_exprs, {[], %{}}, &build_match/2)
+
+    match_catch_all =
+      quote generated: true do
+        @doc false
+        def __match_route__(_verb, _path, _host) do
+          :error
+        end
+      end
+
+    {[matches, match_catch_all], acc}
+  end
+
+  defp build_matches(routes_exprs, :verb, env) do
+    validate_group_by_verb!(routes_exprs, env)
+
+    routes_exprs
+    |> Enum.group_by(&(elem(&1, 0).verb |> to_string() |> String.upcase(:ascii)))
+    |> Map.pop("*", [])
+    |> then(fn {match_routes_exprs, map} ->
+      Map.to_list(map) ++ [{"*", match_routes_exprs}]
+    end)
+    |> Enum.map_reduce({[], %{}}, &build_match_verb/2)
+  end
+
+  defp build_matches(_routes_exprs, group_by, _env) do
+    raise ArgumentError,
+          "expected :group_by to be :verb or nil, got: #{inspect(group_by)}"
+  end
+
+  defp validate_group_by_verb!(routes_exprs, env) do
+    routes = Enum.map(routes_exprs, &elem(&1, 0))
+
+    case routes_after_catch_all(routes, nil, []) do
+      [] ->
+        :ok
+
+      violations ->
+        [{route, _catch_all} | _] = violations
+
+        raise CompileError,
+          file: env.file,
+          line: route.line,
+          description: group_by_verb_error(violations)
+    end
+  end
+
+  defp routes_after_catch_all([route | routes], catch_all, acc) do
+    cond do
+      catch_all && !catch_all_route?(route) ->
+        routes_after_catch_all(routes, catch_all, [{route, catch_all} | acc])
+
+      catch_all_route?(route) ->
+        routes_after_catch_all(routes, catch_all || route, acc)
+
+      true ->
+        routes_after_catch_all(routes, catch_all, acc)
+    end
+  end
+
+  defp routes_after_catch_all([], _catch_all, acc), do: Enum.reverse(acc)
+
+  defp catch_all_route?(%{kind: :forward}), do: true
+  defp catch_all_route?(%{verb: :*}), do: true
+  defp catch_all_route?(_route), do: false
+
+  defp catch_all_description(%{kind: :forward, path: path}), do: "forward #{inspect(path)}"
+  defp catch_all_description(%{path: path}), do: "match :*, #{inspect(path)}"
+
+  defp group_by_verb_error(violations) do
+    routes =
+      Enum.map_join(violations, "\n", fn {route, catch_all} ->
+        "  * #{inspect(route.path)} after #{catch_all_description(catch_all)}"
+      end)
+
+    """
+    cannot compile router with group_by: :verb because routes were found after a match :* or forward.
+    Define all match :* and forward routes at the end of the router.
+
+    #{routes}
+    """
+  end
+
+  defp build_match_verb({"*", routes_exprs}, acc) do
+    name = :__match_route_catch_all__
+
+    {clauses, acc} =
+      Enum.map_reduce(routes_exprs, acc, &build_match_path(:defp, name, [], &1, &2))
+
+    dispatch =
+      quote generated: true do
+        unquote({:__block__, [], clauses})
+
+        defp __match_route_catch_all__(_path, _host) do
+          :error
+        end
+
+        @doc false
+        def __match_route__(_, path, host) do
+          __match_route_catch_all__(path, host)
+        end
+      end
+
+    {dispatch, acc}
+  end
+
+  defp build_match_verb({verb, routes_exprs}, acc) do
+    name = :"__match_route_#{verb}__"
+
+    {clauses, acc} =
+      Enum.map_reduce(routes_exprs, acc, &build_match_path(:defp, name, [], &1, &2))
+
+    dispatch =
+      quote generated: true do
+        unquote({:__block__, [], clauses})
+
+        defp unquote(name)(path, host) do
+          __match_route_catch_all__(path, host)
+        end
+
+        def __match_route__(unquote(verb), path, host) do
+          unquote(name)(path, host)
+        end
+      end
+
+    {dispatch, acc}
+  end
+
+  defp build_match({route, expr}, {acc_pipes, known_pipes}) do
+    verb_match =
+      case route.verb do
+        :* -> Macro.var(:_verb, nil)
+        verb -> verb |> to_string() |> String.upcase()
+      end
+
+    {clauses, acc} =
+      build_match_path(
+        :def,
+        :__match_route__,
+        [verb_match],
+        {route, expr},
+        {acc_pipes, known_pipes}
+      )
+
+    {clauses, acc}
+  end
+
+  defp build_match_path(kind, name, prefix, {route, expr}, {acc_pipes, known_pipes}) do
+    {pipe_name, acc_pipes, known_pipes} = build_match_pipes(route, acc_pipes, known_pipes)
+
+    %{
+      prepare: prepare,
+      dispatch: dispatch,
+      path_params: path_params,
+      hosts: hosts,
+      path: path
+    } = expr
+
+    clauses =
+      for host <- hosts do
+        args = prefix ++ [path, host]
+
+        quote line: route.line do
+          unquote(kind)(unquote(name)(unquote_splicing(args))) do
+            {unquote(build_metadata(route, path_params)),
+             fn var!(conn, :conn), %{path_params: var!(path_params, :conn)} ->
+               unquote(prepare)
+             end, &(unquote(Macro.var(pipe_name, __MODULE__)) / 1), unquote(dispatch)}
+          end
+        end
+      end
+
+    {clauses, {acc_pipes, known_pipes}}
   end
 
   defp build_match_pipes(route, acc_pipes, known_pipes) do
@@ -603,34 +786,6 @@ defmodule Phoenix.Router do
         known_pipes = Map.put(known_pipes, pipe_through, name)
         {name, acc_pipes, known_pipes}
     end
-  end
-
-  defp build_match_group({route, expr}, {acc_clauses, acc_pipes, known_pipes}) do
-    {pipe_name, acc_pipes, known_pipes} = build_match_pipes(route, acc_pipes, known_pipes)
-
-    %{
-      prepare: prepare,
-      dispatch: dispatch,
-      verb_match: verb_match,
-      path_params: path_params,
-      hosts: hosts
-    } = expr
-
-    new_acc_clauses =
-      Enum.reduce(hosts, acc_clauses, fn host, acc_clauses ->
-        [clause] =
-          quote do
-            unquote(verb_match), unquote(host) ->
-              {unquote(build_metadata(route, path_params)),
-              fn var!(conn, :conn), %{path_params: var!(path_params, :conn)} -> unquote(prepare) end,
-              &unquote(Macro.var(pipe_name, __MODULE__))/1,
-              unquote(dispatch)}
-          end
-
-        [clause | acc_clauses]
-      end)
-
-    {new_acc_clauses, acc_pipes, known_pipes}
   end
 
   defp build_metadata(route, path_params) do
@@ -661,7 +816,14 @@ defmodule Phoenix.Router do
   end
 
   defp build_pipes(name, pipe_through) do
-    plugs = pipe_through |> Enum.reverse |> Enum.map(&{&1, [], true})
+    plugs =
+      pipe_through
+      |> Enum.reverse()
+      |> Enum.map(fn
+        {plug, opts} -> {plug, opts, true}
+        plug -> {plug, [], true}
+      end)
+
     opts = [init_mode: Phoenix.plug_init_mode(), log_on_halt: :debug]
     {conn, body} = Plug.Builder.compile(__ENV__, plugs, opts)
 
@@ -673,27 +835,39 @@ defmodule Phoenix.Router do
   @doc """
   Generates a route match based on an arbitrary HTTP method.
 
-  Useful for defining routes not included in the builtin macros.
+  Useful for defining routes not included in the built-in macros.
 
   The catch-all verb, `:*`, may also be used to match all HTTP methods.
+  If the router is configured with `group_by: :verb`, all `match :*` routes
+  must be defined at the end of the router, after all routes with explicit verbs.
 
   ## Options
 
-    * `:as` - configures the named helper exclusively. If false, does not generate
-      a helper.
+    * `:as` - configures the named helper. If `nil`, does not generate
+      a helper. Has no effect when using verified routes exclusively
+
     * `:alias` - configure if the scope alias should be applied to the route.
-      Defaults to true, disables scoping if false.
-    * `:log` - the level to log the route dispatching under,
-      may be set to false. Defaults to `:debug`
+      Defaults to true, disables scoping if false
+
+    * `:log` - the level to log the route dispatching under, may be set to false. Defaults to
+      `:debug`. Route dispatching contains information about how the route is handled (which controller
+      action is called, what parameters are available and which pipelines are used) and is separate from
+      the plug level logging. To alter the plug log level, please see
+      https://phoenix.hexdocs.pm/Phoenix.Logger.html#module-dynamic-log-level
+
     * `:private` - a map of private data to merge into the connection
       when a route matches
+
     * `:assigns` - a map of data to merge into the connection when a route matches
+
     * `:metadata` - a map of metadata used by the telemetry events and returned by
-      `route_info/4`
-    * `:warn_on_verify` - the boolean for whether matches to this route trigger
-      an unmatched route warning for `Phoenix.VerifiedRoutes`. Useful to ignore
-      an otherwise catch-all route definition from being matched when verifying routes.
-      Defaults `true`.
+      `route_info/4`. The `:mfa` field is used by telemetry to print logs and by the
+      router to emit compile time checks. Custom fields may be added
+
+    * `:warn_on_verify` - the boolean for whether matches to this route in verified
+      routes should emit a warning, rather than being accepted as verified. It is useful
+      to ignore an otherwise catch-all route definition from being matched when verifying
+      routes. Defaults `false`
 
   ## Examples
 
@@ -703,7 +877,7 @@ defmodule Phoenix.Router do
 
   """
   defmacro match(verb, path, plug, plug_opts, options \\ []) do
-    add_route(:match, verb, path, plug, plug_opts, options)
+    add_route(:match, verb, path, expand_alias(plug, __CALLER__), plug_opts, options)
   end
 
   for verb <- @http_methods do
@@ -713,24 +887,36 @@ defmodule Phoenix.Router do
         #{verb}("/events/:id", EventController, :action)
 
     See `match/5` for options.
+
+    #{if verb == :head do
+      """
+      ## Compatibility with `Plug.Head`
+
+      By default, Phoenix applications include `Plug.Head` in their endpoint,
+      which converts HEAD requests into regular GET requests. Therefore, if
+      you intend to use `head/4` in your router, you need to move `Plug.Head`
+      to inside your router in a way it does not conflict with the paths given
+      to `head/4`.
+      """
+    end}
     """
     defmacro unquote(verb)(path, plug, plug_opts, options \\ []) do
-      add_route(:match, unquote(verb), path, plug, plug_opts, options)
+      add_route(:match, unquote(verb), path, expand_alias(plug, __CALLER__), plug_opts, options)
     end
   end
 
   defp add_route(kind, verb, path, plug, plug_opts, options) do
     quote do
       @phoenix_routes Scope.route(
-        __ENV__.line,
-        __ENV__.module,
-        unquote(kind),
-        unquote(verb),
-        unquote(path),
-        unquote(plug),
-        unquote(plug_opts),
-        unquote(options)
-      )
+                        __ENV__.line,
+                        __ENV__.module,
+                        unquote(kind),
+                        unquote(verb),
+                        unquote(path),
+                        unquote(plug),
+                        unquote(plug_opts),
+                        unquote(options)
+                      )
     end
   end
 
@@ -775,8 +961,9 @@ defmodule Phoenix.Router do
     compiler =
       quote unquote: false do
         Scope.pipeline(__MODULE__, plug)
-        {conn, body} = Plug.Builder.compile(__ENV__, @phoenix_pipeline,
-          init_mode: Phoenix.plug_init_mode())
+
+        {conn, body} =
+          Plug.Builder.compile(__ENV__, @phoenix_pipeline, init_mode: Phoenix.plug_init_mode())
 
         def unquote(plug)(unquote(conn), _) do
           try do
@@ -789,6 +976,7 @@ defmodule Phoenix.Router do
               Plug.Conn.WrapperError.reraise(unquote(conn), :error, reason, __STACKTRACE__)
           end
         end
+
         @phoenix_pipeline nil
       end
 
@@ -812,7 +1000,7 @@ defmodule Phoenix.Router do
 
     quote do
       if pipeline = @phoenix_pipeline do
-        @phoenix_pipeline [{unquote(plug), unquote(opts), true}|pipeline]
+        @phoenix_pipeline [{unquote(plug), unquote(opts), true} | pipeline]
       else
         raise "cannot define plug at the router level, plug must be defined inside a pipeline"
       end
@@ -847,7 +1035,54 @@ defmodule Phoenix.Router do
   @doc """
   Defines a list of plugs (and pipelines) to send the connection through.
 
-  See `pipeline/2` for more information.
+  Function plugs are specified using the atom name of functions. For example,
+  `:require_authenticated_user`.
+
+  Module plugs are specified using the module name. For example,
+  `MyAppWeb.UserAuth`.
+
+  And, the plugs can also be given options via `{plug, opts}`. For example,
+  `{:require_authenticated_user, opts}`, or `{MyAppWeb.UserAuth, opts}`
+
+  Pipelines are defined in the router, see `pipeline/2` for more information.
+
+  ## Examples
+
+      pipe_through [
+        :browser,
+        :require_authenticated_user,
+        {:trace_user, prefix: :authenticated},
+        MyAppWeb.Plugs.Locale,
+        {MyAppWeb.Plugs.Feature, flag: :beta}
+      ]
+
+  ## Multiple invocations
+
+  `pipe_through/1` can be invoked multiple times within the same scope. Each
+  invocation appends new plugs and pipelines to run, which are applied to all
+  routes **after** the `pipe_through/1` invocation. For example:
+
+      scope "/" do
+        pipe_through [:browser]
+        get "/", HomeController, :index
+
+        pipe_through [:require_authenticated_user]
+        get "/settings", UserController, :edit
+      end
+
+  In the example above, `/` pipes through `browser` only, while `/settings` pipes
+  through both `browser` and `require_authenticated_user`. Therefore, to avoid
+  confusion, we recommend a single `pipe_through` at the top of each scope:
+
+      scope "/" do
+        pipe_through [:browser]
+        get "/", HomeController, :index
+      end
+
+      scope "/" do
+        pipe_through [:browser, :require_authenticated_user]
+        get "/settings", UserController, :edit
+      end
   """
   defmacro pipe_through(pipes) do
     pipes =
@@ -895,7 +1130,8 @@ defmodule Phoenix.Router do
       and as the prefix for the parameter in nested resources. The default value
       is automatically derived from the controller name, i.e. `UserController` will
       have name `"user"`
-    * `:as` - configures the named helper exclusively
+    * `:as` - configures the named helper. If `nil`, does not generate
+      a helper. Has no effect when using verified routes exclusively
     * `:singleton` - defines routes for a singleton resource that is looked up by
       the client without referencing an ID. Read below for more information
 
@@ -932,43 +1168,44 @@ defmodule Phoenix.Router do
 
   will include the following routes:
 
-      user_post_path  GET     /users/:user_id/posts           PostController :index
-      user_post_path  GET     /users/:user_id/posts/:id/edit  PostController :edit
-      user_post_path  GET     /users/:user_id/posts/new       PostController :new
-      user_post_path  GET     /users/:user_id/posts/:id       PostController :show
-      user_post_path  POST    /users/:user_id/posts           PostController :create
-      user_post_path  PATCH   /users/:user_id/posts/:id       PostController :update
-                      PUT     /users/:user_id/posts/:id       PostController :update
-      user_post_path  DELETE  /users/:user_id/posts/:id       PostController :delete
-
+  ```console
+  user_post_path  GET     /users/:user_id/posts           PostController :index
+  user_post_path  GET     /users/:user_id/posts/:id/edit  PostController :edit
+  user_post_path  GET     /users/:user_id/posts/new       PostController :new
+  user_post_path  GET     /users/:user_id/posts/:id       PostController :show
+  user_post_path  POST    /users/:user_id/posts           PostController :create
+  user_post_path  PATCH   /users/:user_id/posts/:id       PostController :update
+                  PUT     /users/:user_id/posts/:id       PostController :update
+  user_post_path  DELETE  /users/:user_id/posts/:id       PostController :delete
+  ```
   """
   defmacro resources(path, controller, opts, do: nested_context) do
-    add_resources path, controller, opts, do: nested_context
+    add_resources(path, controller, opts, do: nested_context)
   end
 
   @doc """
   See `resources/4`.
   """
   defmacro resources(path, controller, do: nested_context) do
-    add_resources path, controller, [], do: nested_context
+    add_resources(path, controller, [], do: nested_context)
   end
 
   defmacro resources(path, controller, opts) do
-    add_resources path, controller, opts, do: nil
+    add_resources(path, controller, opts, do: nil)
   end
 
   @doc """
   See `resources/4`.
   """
   defmacro resources(path, controller) do
-    add_resources path, controller, [], do: nil
+    add_resources(path, controller, [], do: nil)
   end
 
   defp add_resources(path, controller, options, do: context) do
     scope =
       if context do
         quote do
-          scope resource.member, do: unquote(context)
+          scope(resource.member, do: unquote(context))
         end
       end
 
@@ -998,15 +1235,19 @@ defmodule Phoenix.Router do
 
     * `:path` - a string containing the path scope.
     * `:as` - a string or atom containing the named helper scope. When set to
-      false, it resets the nested helper scopes.
+      false, it resets the nested helper scopes. Has no effect when using verified
+      routes exclusively
     * `:alias` - an alias (atom) containing the controller scope. When set to
       false, it resets all nested aliases.
     * `:host` - a string or list of strings containing the host scope, or prefix host scope,
       ie `"foo.bar.com"`, `"foo."`
     * `:private` - a map of private data to merge into the connection when a route matches
     * `:assigns` - a map of data to merge into the connection when a route matches
-    * `:log` - the level to log the route dispatching under,
-      may be set to false. Defaults to `:debug`
+    * `:log` - the level to log the route dispatching under, may be set to false. Defaults to
+      `:debug`. Route dispatching contains information about how the route is handled (which controller
+      action is called, what parameters are available and which pipelines are used) and is separate from
+      the plug level logging. To alter the plug log level, please see
+      https://phoenix.hexdocs.pm/Phoenix.Logger.html#module-dynamic-log-level.
 
   """
   defmacro scope(options, do: context) do
@@ -1076,11 +1317,12 @@ defmodule Phoenix.Router do
   defmacro scope(path, alias, options, do: context) do
     alias = expand_alias(alias, __CALLER__)
 
-    options = quote do
-      unquote(options)
-      |> Keyword.put(:path, unquote(path))
-      |> Keyword.put(:alias, unquote(alias))
-    end
+    options =
+      quote do
+        unquote(options)
+        |> Keyword.put(:path, unquote(path))
+        |> Keyword.put(:alias, unquote(alias))
+      end
 
     do_scope(options, context)
   end
@@ -1088,6 +1330,7 @@ defmodule Phoenix.Router do
   defp do_scope(options, context) do
     quote do
       Scope.push(__MODULE__, unquote(options))
+
       try do
         unquote(context)
       after
@@ -1116,6 +1359,7 @@ defmodule Phoenix.Router do
   @doc """
   Returns the full path with the current scope's path prefix.
   """
+  @doc type: :reflection
   def scoped_path(router_module, path) do
     Scope.full_path(router_module, path)
   end
@@ -1123,15 +1367,27 @@ defmodule Phoenix.Router do
   @doc """
   Forwards a request at the given path to a plug.
 
-  All paths that match the forwarded prefix will be sent to
-  the forwarded plug. This is useful for sharing a router between
+  This is commonly used to forward all subroutes to another Plug.
+  For example:
+
+      forward "/admin", SomeLib.AdminDashboard
+
+  The above will allow `SomeLib.AdminDashboard` to handle `/admin`,
+  `/admin/foo`, `/admin/bar/baz`, and so on. Furthermore,
+  `SomeLib.AdminDashboard` does not to be aware of the prefix it
+  is mounted in. From its point of view, the routes above are simply
+  handled as `/`, `/foo`, and `/bar/baz`.
+
+  A common use case for `forward` is for sharing a router between
   applications or even breaking a big router into smaller ones.
+  However, in other for route generation to route accordingly, you
+  can only forward to a given `Phoenix.Router` once.
+
   The router pipelines will be invoked prior to forwarding the
   connection.
 
-  However, we don't advise forwarding to another endpoint.
-  The reason is that plugs defined by your app and the forwarded
-  endpoint would be invoked twice, which may lead to errors.
+  If the router is configured with `group_by: :verb`, all forwards must be
+  defined at the end of the router, after all routes with explicit verbs.
 
   ## Examples
 
@@ -1195,9 +1451,70 @@ defmodule Phoenix.Router do
   end
 
   def route_info(router, method, split_path, host) when is_list(split_path) do
-    with {_forward_plug, _warn_on_verify?, fun} <- router.__match_route__(split_path),
-         {metadata, _prepare, _pipeline, {_plug, _opts}} <- fun.(method, host) do
+    with {metadata, _prepare, _pipeline, {_plug, _opts}} <-
+           router.__match_route__(method, split_path, host) do
       Map.delete(metadata, :conn)
+    end
+  end
+
+  @doc false
+  def __formatted_routes__(router) do
+    Enum.flat_map(router.__routes__(), fn route ->
+      Code.ensure_loaded(route.plug)
+
+      if function_exported?(route.plug, :formatted_routes, 1) do
+        route.plug_opts
+        |> route.plug.formatted_routes()
+        |> Enum.map(fn nested_route ->
+          route = %{
+            route
+            | path: Path.join(route.path, nested_route.path),
+              verb: nested_route.verb
+          }
+
+          Map.put(route, :label, nested_route.label)
+        end)
+      else
+        plug =
+          case route.metadata[:mfa] do
+            {module, _, _} -> module
+            _ -> route.plug
+          end
+
+        label = "#{inspect(plug)} #{inspect(route.plug_opts)}"
+
+        [
+          %{
+            helper: route.helper,
+            verb: route.verb,
+            path: route.path,
+            label: label
+          }
+        ]
+      end
+    end)
+  end
+
+  @doc false
+  def __verified_route__?(router, split_path) do
+    case router.__verify_route__(split_path) do
+      {_forward_plug, true = _warn_on_verify?} ->
+        false
+
+      {nil = _forward_plug, false = _warn_on_verify?} ->
+        true
+
+      {{router, script_name, plug_opts}, false = _warn_on_verify?} ->
+        Code.ensure_loaded(router)
+
+        if function_exported?(router, :verified_route?, 2) do
+          router.verified_route?(plug_opts, split_path -- script_name)
+        else
+          true
+        end
+
+      :error ->
+        false
     end
   end
 end

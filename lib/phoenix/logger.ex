@@ -58,6 +58,11 @@ defmodule Phoenix.Logger do
       * Metadata: `%{endpoint: atom, transport: atom, params: term, connect_info: map, vsn: binary, user_socket: atom, result: :ok | :error, serializer: atom, log: Logger.level | false}`
       * Disable logging: `use Phoenix.Socket, log: false` or `socket "/foo", MySocket, websocket: [log: false]` in your endpoint
 
+    * `[:phoenix, :socket_drain]` - dispatched by `Phoenix.Socket` when using the `:drainer` option
+      * Measurement: `%{count: integer, total: integer, index: integer, rounds: integer}`
+      * Metadata: `%{endpoint: atom, socket: atom, intervasl: integer, log: Logger.level | false}`
+      * Disable logging: `use Phoenix.Socket, log: false` in your endpoint or pass `:log` option in the `:drainer` option
+
     * `[:phoenix, :channel_joined]` - dispatched at the end of a channel join
       * Measurement: `%{duration: native_time}`
       * Metadata: `%{result: :ok | :error, params: term, socket: Phoenix.Socket.t}`
@@ -69,7 +74,7 @@ defmodule Phoenix.Logger do
       * Disable logging: This event cannot be disabled
 
   To see an example of how Phoenix LiveDashboard uses these events to create
-  metrics, visit <https://hexdocs.pm/phoenix_live_dashboard/metrics.html>.
+  metrics, visit <https://phoenix-live-dashboard.hexdocs.pm/metrics.html>.
 
   ## Parameter filtering
 
@@ -134,6 +139,7 @@ defmodule Phoenix.Logger do
       [:phoenix, :router_dispatch, :start] => &__MODULE__.phoenix_router_dispatch_start/4,
       [:phoenix, :error_rendered] => &__MODULE__.phoenix_error_rendered/4,
       [:phoenix, :socket_connected] => &__MODULE__.phoenix_socket_connected/4,
+      [:phoenix, :socket_drain] => &__MODULE__.phoenix_socket_drain/4,
       [:phoenix, :channel_joined] => &__MODULE__.phoenix_channel_joined/4,
       [:phoenix, :channel_handled_in] => &__MODULE__.phoenix_channel_handled_in/4
     }
@@ -155,48 +161,71 @@ defmodule Phoenix.Logger do
   end
 
   @doc false
-  def filter_values(values, params \\ Application.get_env(:phoenix, :filter_parameters, []))
-  def filter_values(values, {:discard, params}), do: discard_values(values, params)
-  def filter_values(values, {:keep, params}), do: keep_values(values, params)
-  def filter_values(values, params), do: discard_values(values, params)
+  def compile_filter({:compiled, _key, _value} = filter), do: filter
+  def compile_filter({:discard, params}), do: compile_discard(params)
+  def compile_filter({:keep, params}), do: {:keep, params}
+  def compile_filter(params), do: compile_discard(params)
 
-  defp discard_values(%{__struct__: mod} = struct, _params) when is_atom(mod) do
+  defp compile_discard([]) do
+    {:compiled, [], []}
+  end
+
+  defp compile_discard(params) when is_list(params) or is_binary(params) do
+    key_match = :binary.compile_pattern(params)
+    value_match = params |> List.wrap() |> Enum.map(&(&1 <> "=")) |> :binary.compile_pattern()
+    {:compiled, key_match, value_match}
+  end
+
+  @doc false
+  def filter_values(values, filter \\ Application.get_env(:phoenix, :filter_parameters, [])) do
+    case compile_filter(filter) do
+      {:compiled, key_match, value_match} -> discard_values(values, key_match, value_match)
+      {:keep, match} -> keep_values(values, match)
+    end
+  end
+
+  defp discard_values(%{__struct__: mod} = struct, _key_match, _value_match) when is_atom(mod) do
     struct
   end
 
-  defp discard_values(%{} = map, params) do
+  defp discard_values(%{} = map, key_match, value_match) do
     Enum.into(map, %{}, fn {k, v} ->
-      if is_binary(k) and String.contains?(k, params) do
-        {k, "[FILTERED]"}
-      else
-        {k, discard_values(v, params)}
+      cond do
+        is_binary(k) and String.contains?(k, key_match) ->
+          {k, "[FILTERED]"}
+
+        is_binary(v) and String.contains?(v, value_match) ->
+          {k, "[FILTERED]"}
+
+        true ->
+          {k, discard_values(v, key_match, value_match)}
       end
     end)
   end
 
-  defp discard_values([_ | _] = list, params) do
-    Enum.map(list, &discard_values(&1, params))
+  defp discard_values([_ | _] = list, key_match, value_match) do
+    Enum.map(list, &discard_values(&1, key_match, value_match))
   end
 
-  defp discard_values(other, _params), do: other
+  defp discard_values(other, _key_match, _value_match), do: other
 
-  defp keep_values(%{__struct__: mod}, _params) when is_atom(mod), do: "[FILTERED]"
+  defp keep_values(%{__struct__: mod}, _match) when is_atom(mod), do: "[FILTERED]"
 
-  defp keep_values(%{} = map, params) do
+  defp keep_values(%{} = map, match) do
     Enum.into(map, %{}, fn {k, v} ->
-      if is_binary(k) and k in params do
-        {k, discard_values(v, [])}
+      if is_binary(k) and k in match do
+        {k, v}
       else
-        {k, keep_values(v, params)}
+        {k, keep_values(v, match)}
       end
     end)
   end
 
-  defp keep_values([_ | _] = list, params) do
-    Enum.map(list, &keep_values(&1, params))
+  defp keep_values([_ | _] = list, match) do
+    Enum.map(list, &keep_values(&1, match))
   end
 
-  defp keep_values(_other, _params), do: "[FILTERED]"
+  defp keep_values(_other, _match), do: "[FILTERED]"
 
   defp log_level(nil, _conn), do: :info
   defp log_level(level, _conn) when is_atom(level), do: level
@@ -230,7 +259,7 @@ defmodule Phoenix.Logger do
       level ->
         Logger.log(level, fn ->
           %{status: status, state: state} = conn
-          status = Integer.to_string(status)
+          status = status_to_string(status)
           [connection_type(state), ?\s, status, " in ", duration(duration)]
         end)
     end
@@ -252,10 +281,14 @@ defmodule Phoenix.Logger do
         ?\s,
         error_banner(kind, reason),
         " to ",
-        Integer.to_string(status),
+        status_to_string(status),
         " response"
       ]
     end)
+  end
+
+  defp status_to_string(status) do
+    status |> Plug.Conn.Status.code() |> Integer.to_string()
   end
 
   defp error_banner(:error, %type{}), do: inspect(type)
@@ -269,7 +302,6 @@ defmodule Phoenix.Logger do
   def phoenix_router_dispatch_start(_, _, metadata, _) do
     %{log: level, conn: conn, plug: plug} = metadata
     level = log_level(level, conn)
-    log_module = metadata[:log_module] || plug
 
     Logger.log(level, fn ->
       %{
@@ -277,10 +309,16 @@ defmodule Phoenix.Logger do
         plug_opts: plug_opts
       } = metadata
 
+      log_mfa =
+        case metadata[:mfa] do
+          {mod, fun, arity} -> mfa(mod, fun, arity)
+          _ when is_atom(plug_opts) -> mfa(plug, plug_opts, 2)
+          _ -> inspect(plug)
+        end
+
       [
         "Processing with ",
-        inspect(log_module),
-        maybe_action(plug_opts),
+        log_mfa,
         ?\n,
         "  Parameters: ",
         params(conn.params),
@@ -291,8 +329,8 @@ defmodule Phoenix.Logger do
     end)
   end
 
-  defp maybe_action(action) when is_atom(action), do: [?., Atom.to_string(action), ?/, ?2]
-  defp maybe_action(_), do: []
+  defp mfa(mod, fun, arity),
+    do: [inspect(mod), ?., Atom.to_string(fun), ?/, arity + ?0]
 
   defp params(%Plug.Conn.Unfetched{}), do: "[UNFETCHED]"
   defp params(params), do: params |> filter_values() |> inspect()
@@ -329,6 +367,27 @@ defmodule Phoenix.Logger do
 
   defp connect_result(:ok), do: "CONNECTED TO "
   defp connect_result(:error), do: "REFUSED CONNECTION TO "
+
+  @doc false
+  def phoenix_socket_drain(_, _, %{log: false}, _), do: :ok
+
+  def phoenix_socket_drain(
+        _,
+        %{count: count, total: total, index: index, rounds: rounds},
+        %{log: level} = meta,
+        _
+      ) do
+    Logger.log(level, fn ->
+      %{socket: socket, interval: interval} = meta
+
+      [
+        "DRAINING #{count} of #{total} total connection(s) for socket ",
+        inspect(socket),
+        " every #{interval}ms - ",
+        "round #{index} of #{rounds}"
+      ]
+    end)
+  end
 
   ## Event: [:phoenix, :channel_joined]
 

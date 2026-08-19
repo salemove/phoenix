@@ -5,7 +5,7 @@ defmodule Phoenix.Controller.PipelineTest do
   import Phoenix.Controller
 
   defmodule MyController do
-    use Phoenix.Controller
+    use Phoenix.Controller, formats: []
 
     @secret_actions [:secret]
 
@@ -33,30 +33,30 @@ defmodule Phoenix.Controller.PipelineTest do
     end
 
     def no_match(_conn, %{"no" => "match"}) do
-      raise "Shouldn't have matched"
+      raise "shouldn't have matched"
     end
 
     def non_top_level_function_clause_error(conn, params) do
       send_resp(conn, :ok, trigger_func_clause_error(params))
     end
 
-    defp trigger_func_clause_error(%{"no" => "match"}), do: :nomatch
+    defp trigger_func_clause_error(%{"no" => "match"}), do: "shouldn't ever match"
 
     defp do_halt(conn, _), do: halt(conn)
 
     defp prepend(conn, val) do
-      update_in conn.private.stack, &[val|&1]
+      update_in(conn.private.stack, &[val | &1])
     end
   end
 
   defmodule NoViewsController do
-    use Phoenix.Controller, put_default_views: false
+    use Phoenix.Controller, formats: []
 
     def show(conn, _), do: conn
   end
 
   defmodule FallbackFunctionController do
-    use Phoenix.Controller
+    use Phoenix.Controller, formats: []
 
     action_fallback :function_plug
 
@@ -69,21 +69,21 @@ defmodule Phoenix.Controller.PipelineTest do
     defp function_plug(%Plug.Conn{} = conn, :not_a_conn) do
       Plug.Conn.send_resp(conn, 200, "function fallback")
     end
+
     defp function_plug(%Plug.Conn{}, :bad_fallback), do: :bad_function_fallback
 
     defp put_assign(conn, _), do: assign(conn, :value_before_action, :a_value)
   end
 
   defmodule ActionController do
-    use Phoenix.Controller
+    use Phoenix.Controller, formats: []
 
     action_fallback Phoenix.Controller.PipelineTest
 
     plug :put_assign
 
     def action(conn, _) do
-      apply(__MODULE__, conn.private.phoenix_action, [conn, conn.body_params,
-                                                      conn.query_params])
+      apply(__MODULE__, conn.private.phoenix_action, [conn, conn.body_params, conn.query_params])
     end
 
     def show(conn, _, _), do: text(conn, "show")
@@ -108,41 +108,50 @@ defmodule Phoenix.Controller.PipelineTest do
   def call(_conn, :bad_fallback), do: :bad_fallback
 
   setup do
-    Logger.disable(self())
+    Logger.put_process_level(self(), :none)
     :ok
   end
 
   test "invokes the plug stack" do
-    conn = stack_conn()
-           |> MyController.call(:show)
+    conn =
+      stack_conn()
+      |> MyController.call(:show)
+
     assert conn.private.stack == [:action, :before2, :before1]
   end
 
   test "invokes the plug stack with guards" do
-    conn = stack_conn()
-           |> MyController.call(:create)
+    conn =
+      stack_conn()
+      |> MyController.call(:create)
+
     assert conn.private.stack == [:action, :before2, :before1]
   end
 
   test "halts prevent action from running" do
-    conn = stack_conn()
-           |> MyController.call(:secret)
+    conn =
+      stack_conn()
+      |> MyController.call(:secret)
+
     assert conn.private.stack == [:before2, :before1]
   end
 
   test "does not override previous views/layouts" do
-    conn = stack_conn()
-           |> put_view(Hello)
-           |> put_layout(false)
-           |> MyController.call(:create)
+    conn =
+      stack_conn()
+      |> put_view(Hello)
+      |> put_layout(false)
+      |> MyController.call(:create)
+
     assert view_module(conn) == Hello
     assert layout(conn) == false
   end
 
   test "does not set default view/layout" do
-    conn = stack_conn()
-           |> NoViewsController.call(:show)
-           |> put_new_view(Hello)
+    conn =
+      stack_conn()
+      |> NoViewsController.call(:show)
+      |> put_new_view(Hello)
 
     assert view_module(conn) == Hello
     assert layout(conn) == false
@@ -215,7 +224,7 @@ defmodule Phoenix.Controller.PipelineTest do
     test "raises when calling more than once", config do
       assert_raise RuntimeError, ~r/can only be called a single time/, fn ->
         defmodule config.test do
-          use Phoenix.Controller
+          use Phoenix.Controller, formats: []
           action_fallback Ok
           action_fallback Boom
         end

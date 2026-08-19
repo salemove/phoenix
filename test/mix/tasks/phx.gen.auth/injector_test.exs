@@ -46,7 +46,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
         defp deps do
           [
             {:phoenix_pubsub, "~> 2.0-dev", github: "phoenixframework/phoenix_pubsub"},
-            {:ecto_sql, "~> 3.4"},
+            {:ecto_sql, "~> 3.10"},
             {:postgrex, ">= 0.0.0"},
             {:jason, "~> 1.0"}
           ]
@@ -113,7 +113,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                  [
                    {:bcrypt_elixir, "~> 2.0"},
                    {:phoenix_pubsub, "~> 2.0-dev", github: "phoenixframework/phoenix_pubsub"},
-                   {:ecto_sql, "~> 3.4"},
+                   {:ecto_sql, "~> 3.10"},
                    {:postgrex, ">= 0.0.0"},
                    {:jason, "~> 1.0"}
                  ]
@@ -188,6 +188,47 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
 
                scope "/", MyApp do
                  resources "/companies", CompanyController
+               end
+             end
+             """
+    end
+
+    test "injects code before dev routes" do
+      existing_code = """
+      defmodule MyApp.Router do
+        use MyApp, :router
+
+        # Enable Swoosh mailbox preview in development.
+        if Application.compile_env(:my_app, :dev_routes) do
+          scope "/dev" do
+            forward "/mailbox", Plug.Swoosh.MailboxPreview
+          end
+        end
+      end
+      """
+
+      code_to_inject = """
+
+        scope "/", MyApp do
+          live "/users/settings", UserLive.Settings, :edit
+        end
+      """
+
+      assert {:ok, new_code} = Injector.inject_before_final_end(existing_code, code_to_inject)
+
+      assert new_code == """
+             defmodule MyApp.Router do
+               use MyApp, :router
+
+               scope "/", MyApp do
+                 live "/users/settings", UserLive.Settings, :edit
+               end
+
+               # Enable Swoosh mailbox preview in development.
+               if Application.compile_env(:my_app, :dev_routes) do
+                 scope "/dev" do
+                   forward "/mailbox", Plug.Swoosh.MailboxPreview
+                 end
                end
              end
              """
@@ -468,8 +509,14 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
 
   describe "router_plug_inject/2" do
     test "injects after :put_secure_browser_headers" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
       context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_scope}}
+      ]
 
       input = """
       defmodule DemoWeb.Router do
@@ -485,7 +532,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       end
       """
 
-      {:ok, injected} = Injector.router_plug_inject(input, context)
+      {:ok, injected} = Injector.router_plug_inject(input, binding)
 
       assert injected ==
                """
@@ -498,15 +545,21 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                    plug :fetch_flash
                    plug :protect_from_forgery
                    plug :put_secure_browser_headers
-                   plug :fetch_current_user
+                   plug :fetch_current_scope_for_user
                  end
                end
                """
     end
 
     test "injects after :put_secure_browser_headers even when it has additional options" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
       context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_scope}}
+      ]
 
       input = """
       defmodule DemoWeb.Router do
@@ -522,7 +575,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       end
       """
 
-      {:ok, injected} = Injector.router_plug_inject(input, context)
+      {:ok, injected} = Injector.router_plug_inject(input, binding)
 
       assert injected ==
                """
@@ -535,15 +588,21 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                    plug :fetch_flash
                    plug :protect_from_forgery
                    plug :put_secure_browser_headers, %{"content-security-policy" => @csp}
-                   plug :fetch_current_user
+                   plug :fetch_current_scope_for_user
                  end
                end
                """
     end
 
     test "respects windows line endings" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
       context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_scope}}
+      ]
 
       input = """
       defmodule DemoWeb.Router do\r
@@ -559,7 +618,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       end\r
       """
 
-      {:ok, injected} = Injector.router_plug_inject(input, context)
+      {:ok, injected} = Injector.router_plug_inject(input, binding)
 
       assert injected ==
                """
@@ -572,15 +631,21 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                    plug :fetch_flash\r
                    plug :protect_from_forgery\r
                    plug :put_secure_browser_headers\r
-                   plug :fetch_current_user\r
+                   plug :fetch_current_scope_for_user\r
                  end\r
                end\r
                """
     end
 
     test "errors when :put_secure_browser_headers_is_missing" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
       context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_scope}}
+      ]
 
       input = """
       defmodule DemoWeb.Router do
@@ -595,25 +660,55 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       end
       """
 
-      assert {:error, :unable_to_inject} = Injector.router_plug_inject(input, context)
+      assert {:error, :unable_to_inject} = Injector.router_plug_inject(input, binding)
     end
   end
 
   describe "router_plug_help_text/2" do
     test "returns a string with the expected help text" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
       context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_scope}}
+      ]
 
       file_path = Path.expand("foo.ex")
 
-      assert Injector.router_plug_help_text(file_path, context) ==
+      assert Injector.router_plug_help_text(file_path, binding) ==
                """
-               Add the :fetch_current_user plug to the :browser pipeline in foo.ex:
+               Add the :fetch_current_scope_for_user plug to the :browser pipeline in foo.ex:
 
                    pipeline :browser do
                      ...
                      plug :put_secure_browser_headers
-                     plug :fetch_current_user
+                     plug :fetch_current_scope_for_user
+                   end
+               """
+    end
+
+    test "adheres to the --assign-key" do
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      context = Context.new("Accounts", schema, [])
+
+      binding = [
+        schema: schema,
+        context: context,
+        scope_config: %{scope: %{assign_key: :current_user_scope}}
+      ]
+
+      file_path = Path.expand("foo.ex")
+
+      assert Injector.router_plug_help_text(file_path, binding) ==
+               """
+               Add the :fetch_current_user_scope_for_user plug to the :browser pipeline in foo.ex:
+
+                   pipeline :browser do
+                     ...
+                     plug :put_secure_browser_headers
+                     plug :fetch_current_user_scope_for_user
                    end
                """
     end
@@ -621,7 +716,8 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
 
   describe "app_layout_menu_inject/2" do
     test "injects user menu at the bottom of nav section when it exists" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
 
       template = """
       <!DOCTYPE html>
@@ -634,7 +730,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
             <section class="container">
               <nav>
                 <ul>
-                  <li><a href="https://hexdocs.pm/phoenix/overview.html">Get Started</a></li>
+                  <li><a href="https://phoenix.hexdocs.pm/overview.html">Get Started</a></li>
                   <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
                     <li><.link href={Routes.live_dashboard_path(@conn, :home)}>LiveDashboard</.link></li>
                   <% end %>
@@ -646,7 +742,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       </html>
       """
 
-      {:ok, template_str} = Injector.app_layout_menu_inject(schema, template)
+      {:ok, template_str} = Injector.app_layout_menu_inject(binding, template)
 
       assert template_str ==
                """
@@ -660,19 +756,29 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                      <section class="container">
                        <nav>
                          <ul>
-                           <li><a href="https://hexdocs.pm/phoenix/overview.html">Get Started</a></li>
+                           <li><a href="https://phoenix.hexdocs.pm/overview.html">Get Started</a></li>
                            <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
                              <li><.link href={Routes.live_dashboard_path(@conn, :home)}>LiveDashboard</.link></li>
                            <% end %>
                          </ul>
-                         <ul>
-                           <%= if @current_user do %>
-                             <li><%= @current_user.email %></li>
-                             <li><.link href={~p"/users/settings"}>Settings</.link></li>
-                             <li><.link href={~p"/users/log_out"} method="delete">Log out</.link></li>
+                         <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
+                           <%= if @current_scope do %>
+                             <li>
+                               {@current_scope.user.email}
+                             </li>
+                             <li>
+                               <.link href={~p"/users/settings"}>Settings</.link>
+                             </li>
+                             <li>
+                               <.link href={~p"/users/log-out"} method="delete">Log out</.link>
+                             </li>
                            <% else %>
-                             <li><.link href={~p"/users/register"}>Register</.link></li>
-                             <li><.link href={~p"/users/log_in"}>Log in</.link></li>
+                             <li>
+                               <.link href={~p"/users/register"}>Register</.link>
+                             </li>
+                             <li>
+                               <.link href={~p"/users/log-in"}>Log in</.link>
+                             </li>
                            <% end %>
                          </ul>
                        </nav>
@@ -684,7 +790,8 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
     end
 
     test "injects user menu at the bottom of nav section when it exists with windows line endings" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
 
       template = """
       <!DOCTYPE html>\r
@@ -697,7 +804,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
             <section class="container">\r
               <nav>\r
                 <ul>\r
-                  <li><a href="https://hexdocs.pm/phoenix/overview.html">Get Started</a></li>\r
+                  <li><a href="https://phoenix.hexdocs.pm/overview.html">Get Started</a></li>\r
                   <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>\r
                     <li><.link href={Routes.live_dashboard_path(@conn, :home)}>LiveDashboard</.link></li>\r
                   <% end %>\r
@@ -709,7 +816,7 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
       </html>\r
       """
 
-      {:ok, template_str} = Injector.app_layout_menu_inject(schema, template)
+      {:ok, template_str} = Injector.app_layout_menu_inject(binding, template)
 
       assert template_str ==
                """
@@ -723,19 +830,29 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                      <section class="container">\r
                        <nav>\r
                          <ul>\r
-                           <li><a href="https://hexdocs.pm/phoenix/overview.html">Get Started</a></li>\r
+                           <li><a href="https://phoenix.hexdocs.pm/overview.html">Get Started</a></li>\r
                            <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>\r
                              <li><.link href={Routes.live_dashboard_path(@conn, :home)}>LiveDashboard</.link></li>\r
                            <% end %>\r
                          </ul>\r
-                         <ul>\r
-                           <%= if @current_user do %>\r
-                             <li><%= @current_user.email %></li>\r
-                             <li><.link href={~p"/users/settings"}>Settings</.link></li>\r
-                             <li><.link href={~p"/users/log_out"} method="delete">Log out</.link></li>\r
+                         <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">\r
+                           <%= if @current_scope do %>\r
+                             <li>\r
+                               {@current_scope.user.email}\r
+                             </li>\r
+                             <li>\r
+                               <.link href={~p"/users/settings"}>Settings</.link>\r
+                             </li>\r
+                             <li>\r
+                               <.link href={~p"/users/log-out"} method="delete">Log out</.link>\r
+                             </li>\r
                            <% else %>\r
-                             <li><.link href={~p"/users/register"}>Register</.link></li>\r
-                             <li><.link href={~p"/users/log_in"}>Log in</.link></li>\r
+                             <li>\r
+                               <.link href={~p"/users/register"}>Register</.link>\r
+                             </li>\r
+                             <li>\r
+                               <.link href={~p"/users/log-in"}>Log in</.link>\r
+                             </li>\r
                            <% end %>\r
                          </ul>\r
                        </nav>\r
@@ -747,7 +864,8 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
     end
 
     test "injects render user_menu after the opening body tag" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
 
       template = """
       <!DOCTYPE html>
@@ -757,15 +875,15 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
         </head>
         <body>
           <main class="container">
-            <p class="alert alert-info" role="alert"><%= get_flash(@conn, :info) %></p>
-            <p class="alert alert-danger" role="alert"><%= get_flash(@conn, :error) %></p>
-            <%= @inner_content %>
+            <p class="alert alert-info" role="alert">{Phoenix.Flash.get(@conn, :info)}</p>
+            <p class="alert alert-danger" role="alert">{Phoenix.Flash.get(@conn, :error)}</p>
+            {@inner_content}
           </main>
         </body>
       </html>
       """
 
-      {:ok, template_str} = Injector.app_layout_menu_inject(schema, template)
+      {:ok, template_str} = Injector.app_layout_menu_inject(binding, template)
 
       assert template_str ==
                """
@@ -775,20 +893,30 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                    <title>Demo · Phoenix Framework</title>
                  </head>
                  <body>
-                   <ul>
-                     <%= if @current_user do %>
-                       <li><%= @current_user.email %></li>
-                       <li><.link href={~p"/users/settings"}>Settings</.link></li>
-                       <li><.link href={~p"/users/log_out"} method="delete">Log out</.link></li>
+                   <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
+                     <%= if @current_scope do %>
+                       <li>
+                         {@current_scope.user.email}
+                       </li>
+                       <li>
+                         <.link href={~p"/users/settings"}>Settings</.link>
+                       </li>
+                       <li>
+                         <.link href={~p"/users/log-out"} method="delete">Log out</.link>
+                       </li>
                      <% else %>
-                       <li><.link href={~p"/users/register"}>Register</.link></li>
-                       <li><.link href={~p"/users/log_in"}>Log in</.link></li>
+                       <li>
+                         <.link href={~p"/users/register"}>Register</.link>
+                       </li>
+                       <li>
+                         <.link href={~p"/users/log-in"}>Log in</.link>
+                       </li>
                      <% end %>
                    </ul>
                    <main class="container">
-                     <p class="alert alert-info" role="alert"><%= get_flash(@conn, :info) %></p>
-                     <p class="alert alert-danger" role="alert"><%= get_flash(@conn, :error) %></p>
-                     <%= @inner_content %>
+                     <p class="alert alert-info" role="alert">{Phoenix.Flash.get(@conn, :info)}</p>
+                     <p class="alert alert-danger" role="alert">{Phoenix.Flash.get(@conn, :error)}</p>
+                     {@inner_content}
                    </main>
                  </body>
                </html>
@@ -796,7 +924,8 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
     end
 
     test "works with windows line endings" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
 
       template = """
       <!DOCTYPE html>\r
@@ -806,15 +935,15 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
         </head>\r
         <body>\r
           <main class="container">\r
-            <p class="alert alert-info" role="alert"><%= get_flash(@conn, :info) %></p>\r
-            <p class="alert alert-danger" role="alert"><%= get_flash(@conn, :error) %></p>\r
-            <%= @inner_content %>\r
+            <p class="alert alert-info" role="alert">{Phoenix.Flash.get(@conn, :info)}</p>\r
+            <p class="alert alert-danger" role="alert">{Phoenix.Flash.get(@conn, :error)}</p>\r
+            {@inner_content}\r
           </main>\r
         </body>\r
       </html>\r
       """
 
-      {:ok, template_str} = Injector.app_layout_menu_inject(schema, template)
+      {:ok, template_str} = Injector.app_layout_menu_inject(binding, template)
 
       assert template_str ==
                """
@@ -824,20 +953,30 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
                    <title>Demo · Phoenix Framework</title>\r
                  </head>\r
                  <body>\r
-                   <ul>\r
-                     <%= if @current_user do %>\r
-                       <li><%= @current_user.email %></li>\r
-                       <li><.link href={~p"/users/settings"}>Settings</.link></li>\r
-                       <li><.link href={~p"/users/log_out"} method="delete">Log out</.link></li>\r
+                   <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">\r
+                     <%= if @current_scope do %>\r
+                       <li>\r
+                         {@current_scope.user.email}\r
+                       </li>\r
+                       <li>\r
+                         <.link href={~p"/users/settings"}>Settings</.link>\r
+                       </li>\r
+                       <li>\r
+                         <.link href={~p"/users/log-out"} method="delete">Log out</.link>\r
+                       </li>\r
                      <% else %>\r
-                       <li><.link href={~p"/users/register"}>Register</.link></li>\r
-                       <li><.link href={~p"/users/log_in"}>Log in</.link></li>\r
+                       <li>\r
+                         <.link href={~p"/users/register"}>Register</.link>\r
+                       </li>\r
+                       <li>\r
+                         <.link href={~p"/users/log-in"}>Log in</.link>\r
+                       </li>\r
                      <% end %>\r
                    </ul>\r
                    <main class="container">\r
-                     <p class="alert alert-info" role="alert"><%= get_flash(@conn, :info) %></p>\r
-                     <p class="alert alert-danger" role="alert"><%= get_flash(@conn, :error) %></p>\r
-                     <%= @inner_content %>\r
+                     <p class="alert alert-info" role="alert">{Phoenix.Flash.get(@conn, :info)}</p>\r
+                     <p class="alert alert-danger" role="alert">{Phoenix.Flash.get(@conn, :error)}</p>\r
+                     {@inner_content}\r
                    </main>\r
                  </body>\r
                </html>\r
@@ -845,7 +984,8 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
     end
 
     test "returns :already_injected when render is already found in file" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
 
       template = """
       <!DOCTYPE html>
@@ -857,39 +997,41 @@ defmodule Mix.Tasks.Phx.Gen.Auth.InjectorTest do
           <div class="my-header">
             <ul>
               <%= if @current_user do %>
-                <li><%= @current_user.email %></li>
+                <li>{@current_user.email}</li>
                 <li><.link href={~p"/users/settings"}>Settings</.link></li>
-                <li><.link href={~p"/users/log_out"} method="delete">Log out</.link></li>
+                <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
               <% else %>
                 <li><.link href={~p"/users/register"}>Register</.link></li>
-                <li><.link href={~p"/users/log_in"}>Log in</.link></li>
+                <li><.link href={~p"/users/log-in"}>Log in</.link></li>
               <% end %>
             </ul>
           </div>
           <main class="container">
-            <p class="alert alert-info" role="alert"><%= get_flash(@conn, :info) %></p>
-            <p class="alert alert-danger" role="alert"><%= get_flash(@conn, :error) %></p>
-            <%= @inner_content %>
+            <p class="alert alert-info" role="alert">{Phoenix.Flash.get(@conn, :info)}</p>
+            <p class="alert alert-danger" role="alert">{Phoenix.Flash.get(@conn, :error)}</p>
+            {@inner_content}
           </main>
         </body>
       </html>
       """
 
-      assert :already_injected = Injector.app_layout_menu_inject(schema, template)
+      assert :already_injected = Injector.app_layout_menu_inject(binding, template)
     end
 
     test "returns {:error, :unable_to_inject} when the body tag isn't found" do
-      schema = Schema.new("Accounts.User", "users", [], [])
-      assert {:error, :unable_to_inject} = Injector.app_layout_menu_inject(schema, "")
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
+      assert {:error, :unable_to_inject} = Injector.app_layout_menu_inject(binding, "")
     end
   end
 
   describe "app_layout_menu_help_text/2" do
     test "returns a string with the expected help text" do
-      schema = Schema.new("Accounts.User", "users", [], [])
+      schema = Schema.new("Accounts.User", "users", [], no_scope: true)
+      binding = [schema: schema, scope_config: %{scope: %{assign_key: :current_scope}}]
       file_path = Path.expand("foo.ex")
 
-      assert Injector.app_layout_menu_help_text(file_path, schema) =~
+      assert Injector.app_layout_menu_help_text(file_path, binding) =~
                "Add the following user menu"
     end
   end

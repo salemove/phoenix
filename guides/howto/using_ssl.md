@@ -4,13 +4,13 @@ To prepare an application to serve requests over SSL, we need to add a little bi
 
 The configuration consists of a new `https:` key for our endpoint whose value is a keyword list of port, path to the key file, and path to the cert (PEM) file. If we add the `otp_app:` key whose value is the name of our application, Plug will begin to look for them at the root of our application. We can then put those files in our `priv` directory and set the paths to `priv/our_keyfile.key` and `priv/our_cert.crt`.
 
-Here's an example configuration from `config/prod.exs`.
+Here's an example configuration from `config/runtime.exs`.
 
 ```elixir
 import Config
 
 config :hello, HelloWeb.Endpoint,
-  http: [port: {:system, "PORT"}],
+  http: [port: String.to_integer(System.get_env("PORT"))],
   url: [host: "example.com"],
   cache_static_manifest: "priv/static/cache_manifest.json",
   https: [
@@ -31,7 +31,7 @@ Without the `otp_app:` key, we need to provide absolute paths to the files where
 Path.expand("../../../some/path/to/ssl/key.pem", __DIR__)
 ```
 
-The options under the `https:` key are passed to the Plug adapter, typically `Plug.Cowboy`, which in turn uses `Plug.SSL` to select the TLS socket options. Please refer to the documentation for [Plug.SSL.configure/1](https://hexdocs.pm/plug/Plug.SSL.html#configure/1) for more information on the available options and their defaults. The [Plug HTTPS Guide](https://hexdocs.pm/plug/https.html) and the [Erlang/OTP ssl](https://erlang.org/doc/man/ssl.html) documentation also provide valuable information.
+The options under the `https:` key are passed to the Plug adapter, typically `Bandit`, which in turn uses `Plug.SSL` to select the TLS socket options. Please refer to the documentation for [Plug.SSL.configure/1](https://plug.hexdocs.pm/Plug.SSL.html#configure/1) for more information on the available options and their defaults. The [Plug HTTPS Guide](https://plug.hexdocs.pm/https.html) and the [Erlang/OTP ssl](https://www.erlang.org/doc/man/ssl.html) documentation also provide valuable information.
 
 ## SSL in Development
 
@@ -54,30 +54,56 @@ This can replace your `http` configuration, or you can run HTTP and HTTPS server
 
 ## Force SSL
 
-In many cases, you'll want to force all incoming requests to use SSL by redirecting HTTP to HTTPS. This can be accomplished by setting the `:force_ssl` option in your endpoint configuration. It expects a list of options which are forwarded to `Plug.SSL`. By default, it sets the "strict-transport-security" header in HTTPS requests, forcing browsers to always use HTTPS. If an unsafe (HTTP) request is sent, it redirects to the HTTPS version using the `:host` specified in the `:url` configuration. For example:
+In many cases, you'll want to force all incoming requests to use SSL by redirecting HTTP to HTTPS. This can be accomplished by setting the `:force_ssl` option in your endpoint configuration. It expects a list of options which are forwarded to `Plug.SSL`. By default, it sets the "strict-transport-security" header in HTTPS requests, forcing browsers to always use HTTPS. For example:
 
 ```elixir
 config :my_app, MyAppWeb.Endpoint,
   force_ssl: [rewrite_on: [:x_forwarded_proto]]
 ```
 
-To dynamically redirect to the `host` of the current request, set `:host` in the `:force_ssl` configuration to `nil`.
+
+If an unsafe (HTTP) request is sent, the above will redirect to the HTTPS version using the `:host` specified in the `:url` configuration. The `rewrite_on:` key specifies the HTTP header used by a reverse proxy or load balancer in front of the application to indicate whether the request was received over HTTP or HTTPS.
+
+To dynamically redirect to the `host` of the current request, set `:host` in the `:force_ssl` configuration to `nil`. In such cases, you must also set `x_forwarded_host` and `x_forwarded_port` if running behind a proxy:
 
 ```elixir
 config :my_app, MyAppWeb.Endpoint,
-  force_ssl: [rewrite_on: [:x_forwarded_proto], host: nil]
+  force_ssl: [rewrite_on: [:x_forwarded_proto, :x_forwarded_host, :x_forwarded_port], host: nil]
 ```
 
-In these examples, the `rewrite_on:` key specifies the HTTP header used by a reverse proxy or load balancer in front of the application to indicate whether the request was received over HTTP or HTTPS. For more information on the implications of offloading TLS to an external element, in particular relating to secure cookies, refer to the [Plug HTTPS Guide](https://hexdocs.pm/plug/https.html#offloading-tls). Keep in mind that the options passed to `Plug.SSL` in that document should be set using the `force_ssl:` endpoint option in a Phoenix application.
+Furthermore, keep in mind `force_ssl` will redirect all requests, except the ones coming from localhost. If your application is doing probeness checks using another origin, such as "127.0.0.1" or an internal IP address, you may need to explicitly exclude them from `force_ssl`:
+
+```elixir
+config :my_app, MyAppWeb.Endpoint,
+  force_ssl: [rewrite_on: [:x_forwarded_proto], exclude: ["localhost", "127.0.0.1"]]
+```
 
 It is important to note that `force_ssl:` is a *compile* time config, so it normally is set in `prod.exs`, it will not work when set from `runtime.exs`.
 
+For more information on the implications of offloading TLS to an external element, in particular relating to secure cookies, refer to the [Plug HTTPS Guide](https://plug.hexdocs.pm/https.html#offloading-tls). Keep in mind that the options passed to `Plug.SSL` in that document should be set using the `force_ssl:` endpoint option in a Phoenix application.
+
 ## HSTS
 
-HSTS or "strict-transport-security" is a mechanism that allows a website to declare itself as only accessible via a secure connection (HTTPS). It was introduced to prevent man-in-the-middle attacks that strip SSL/TLS. It causes web browsers to redirect from HTTP to HTTPS and refuse to connect unless the connection uses SSL/TLS.
+HSTS, short for 'HTTP Strict-Transport-Security', is a mechanism that allows websites to declare themselves as accessible exclusively through a secure connection (HTTPS). It was introduced to prevent man-in-the-middle attacks that strip SSL/TLS encryption. HSTS causes web browsers to redirect from HTTP to HTTPS and to refuse to connect unless the connection uses SSL/TLS.
 
-With `force_ssl: [hsts: true]` set, the `Strict-Transport-Security` header is set with a max age that defines the length of time the policy is valid for. Modern web browsers will respond to this by redirecting from HTTP to HTTPS for the standard case but it does have other consequences. [RFC6797](https://tools.ietf.org/html/rfc6797) which defines HSTS also specifies **that the browser should keep track of the policy of a host and apply it until it expires.** It also specifies that **traffic on any port other than 80 is assumed to be encrypted** as per the policy.
+With `force_ssl: [hsts: true]` set, the `Strict-Transport-Security` header is added with a max-age that defines the duration for which the policy is valid. Modern web browsers will respond to this by redirecting from HTTP to HTTPS, among other consequences. [RFC6797](https://tools.ietf.org/html/rfc6797), which defines HSTS, also specifies that **the browser should keep track of a host's policy and apply it until it expires.** It further specifies that **traffic on any port other than 80 is assumed to be encrypted** as per the policy.
 
-This can result in unexpected behaviour if you access your application on localhost, for example `https://localhost:4000`, as from that point forward any traffic coming from localhost will be expected to be encrypted, except port 80 which will be redirected to port 443. This has the potential to disrupt traffic to any other local servers or proxies that you may be running on your computer. Other applications or proxies on localhost will refuse to work unless the traffic is encrypted.
+While HSTS is recommended in production, it can lead to unexpected behavior when accessing applications on localhost. For instance, accessing an application with HSTS enabled at `https://localhost:4000` leads to a situation where all subsequent traffic from localhost, except for port 80, is expected to be encrypted. This can disrupt traffic to other local servers or proxies running on your computer that are unrelated to your Phoenix application and may not support encrypted traffic.
 
-If you do inadvertently turn on HSTS for localhost, you may need to reset the cache on your browser before it will accept any HTTP traffic from localhost. For Chrome, you need to `Empty Cache and Hard Reload` which is available from the reload menu that appears when you click and hold the reload icon from the Developer Tools Panel. For Safari, you will need to clear your cache, remove the entry from `~/Library/Cookies/HSTS.plist` (or delete that file entirely) and restart Safari. Alternately, you can set the `:expires` option on `force_ssl` to `0` which should expired the entry to turn off HSTS. More information on the options for HSTS are available at [Plug.SSL](https://hexdocs.pm/plug/Plug.SSL.html).
+If you inadvertently enable HSTS for localhost, you may need to reset your browser's cache before it will accept HTTP traffic from localhost again.
+
+For Chrome:
+1. Open the Developer Tools Panel.
+2. Click and hold the reload icon next to the address bar to reveal a dropdown menu.
+3. Select "Empty Cache and Hard Reload".
+
+For Safari:
+1. Clear your browser cache.
+2. Remove the entry from `~/Library/Cookies/HSTS.plist` or delete the file entirely.
+3. Restart Safari.
+
+For other browsers, please consult the documentation for HSTS.
+
+Alternatively, setting the `:expires` option on `force_ssl` to `0` should expire the entry and disable HSTS.
+
+For more information on HSTS options, see [Plug.SSL](https://plug.hexdocs.pm/Plug.SSL.html).
