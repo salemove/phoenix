@@ -4,7 +4,9 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   @moduledoc """
   Generates a context with functions around an Ecto schema.
 
-      $ mix phx.gen.context Accounts User users name:string age:integer
+  ```console
+  $ mix phx.gen.context Accounts User users name:string age:integer
+  ```
 
   The first argument is the context module followed by the schema module
   and its plural name (used as the schema table name).
@@ -28,13 +30,21 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   A migration file for the repository and test files for the context
   will also be generated.
 
+  The generated migration can be skipped with `--no-migration`.
+
+  ## Scopes
+
+  If your application configures its own default [scope](scopes.md), then this generator
+  will automatically make sure all of your context operations are correctly scoped.
+  You can pass the `--no-scope` flag to disable the scoping.
+
   ## Generating without a schema
 
   In some cases, you may wish to bootstrap the context module and
   tests, but leave internal implementation of the context and schema
   to yourself. Use the `--no-schema` flags to accomplish this.
 
-  ## table
+  ## `--table`
 
   By default, the table name for the migration and schema will be
   the plural name provided for the resource. To customize this value,
@@ -42,7 +52,7 @@ defmodule Mix.Tasks.Phx.Gen.Context do
 
       $ mix phx.gen.context Accounts User users --table cms_users
 
-  ## binary_id
+  ## `--binary-id`
 
   Generated migration can use `binary_id` for schema's primary key
   and its references with option `--binary-id`.
@@ -55,6 +65,7 @@ defmodule Mix.Tasks.Phx.Gen.Context do
       config :your_app, :generators,
         migration: true,
         binary_id: false,
+        timestamp_type: :naive_datetime,
         sample_binary_id: "11111111-1111-1111-1111-111111111111"
 
   You can override those options per invocation by providing corresponding
@@ -78,20 +89,42 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   alias Mix.Phoenix.{Context, Schema}
   alias Mix.Tasks.Phx.Gen
 
-  @switches [binary_id: :boolean, table: :string, web: :string,
-             schema: :boolean, context: :boolean, context_app: :string,
-             merge_with_existing_context: :boolean, prefix: :string, live: :boolean]
+  @switches [
+    binary_id: :boolean,
+    table: :string,
+    web: :string,
+    schema: :boolean,
+    context: :boolean,
+    context_app: :string,
+    merge_with_existing_context: :boolean,
+    prefix: :string,
+    live: :boolean,
+    compile: :boolean,
+    primary_key: :string,
+    migration: :boolean,
+    scope: :string,
+    no_scope: :boolean
+  ]
 
   @default_opts [schema: true, context: true]
 
   @doc false
   def run(args) do
     if Mix.Project.umbrella?() do
-      Mix.raise "mix phx.gen.context must be invoked from within your *_web application root directory"
+      Mix.raise(
+        "mix phx.gen.context must be invoked from within your *_web application root directory"
+      )
     end
 
     {context, schema} = build(args)
-    binding = [context: context, schema: schema]
+
+    binding = [
+      context: context,
+      schema: schema,
+      scope: context.scope,
+      primary_key: schema.opts[:primary_key] || :id
+    ]
+
     paths = Mix.Phoenix.generator_paths()
 
     prompt_for_conflicts(context)
@@ -109,9 +142,15 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   end
 
   @doc false
-  def build(args, help \\ __MODULE__) do
+  def build(args, opts \\ []) do
+    help = Keyword.get(opts, :help_module, __MODULE__)
+    optional = Keyword.get(opts, :name_optional, false)
+
     {opts, parsed, _} = parse_opts(args)
-    [context_name, schema_name, plural | schema_args] = validate_args!(parsed, help)
+
+    {context_name, schema_name, plural, schema_args} =
+      validate_args!(parsed, optional, help)
+
     schema_module = inspect(Module.concat(context_name, schema_name))
     schema = Gen.Schema.build([schema_module, plural | schema_args], opts, help)
     context = Context.new(context_name, schema, opts)
@@ -120,6 +159,7 @@ defmodule Mix.Tasks.Phx.Gen.Context do
 
   defp parse_opts(args) do
     {opts, parsed, invalid} = OptionParser.parse(args, switches: @switches)
+
     merged_opts =
       @default_opts
       |> Keyword.merge(opts)
@@ -127,7 +167,9 @@ defmodule Mix.Tasks.Phx.Gen.Context do
 
     {merged_opts, parsed, invalid}
   end
+
   defp put_context_app(opts, nil), do: opts
+
   defp put_context_app(opts, string) do
     Keyword.put(opts, :context_app, String.to_atom(string))
   end
@@ -154,7 +196,10 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   @doc false
   def ensure_context_file_exists(%Context{file: file} = context, paths, binding) do
     unless Context.pre_existing?(context) do
-      Mix.Generator.create_file(file, Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/context.ex", binding))
+      Mix.Generator.create_file(
+        file,
+        Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/context.ex.eex", binding)
+      )
     end
   end
 
@@ -162,7 +207,10 @@ defmodule Mix.Tasks.Phx.Gen.Context do
     ensure_context_file_exists(context, paths, binding)
 
     paths
-    |> Mix.Phoenix.eval_from("priv/templates/phx.gen.context/#{schema_access_template(context)}", binding)
+    |> Mix.Phoenix.eval_from(
+      "priv/templates/phx.gen.context/#{schema_access_template(context)}",
+      binding
+    )
     |> inject_eex_before_final_end(file, binding)
   end
 
@@ -173,30 +221,51 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   @doc false
   def ensure_test_file_exists(%Context{test_file: test_file} = context, paths, binding) do
     unless Context.pre_existing_tests?(context) do
-      Mix.Generator.create_file(test_file, Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/context_test.exs", binding))
+      Mix.Generator.create_file(
+        test_file,
+        Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/context_test.exs.eex", binding)
+      )
     end
   end
 
   defp inject_tests(%Context{test_file: test_file} = context, paths, binding) do
     ensure_test_file_exists(context, paths, binding)
 
+    file =
+      if context.schema.scope do
+        "test_cases_scope.exs.eex"
+      else
+        "test_cases.exs.eex"
+      end
+
     paths
-    |> Mix.Phoenix.eval_from("priv/templates/phx.gen.context/test_cases.exs", binding)
+    |> Mix.Phoenix.eval_from("priv/templates/phx.gen.context/#{file}", binding)
     |> inject_eex_before_final_end(test_file, binding)
   end
 
   @doc false
-  def ensure_test_fixtures_file_exists(%Context{test_fixtures_file: test_fixtures_file} = context, paths, binding) do
+  def ensure_test_fixtures_file_exists(
+        %Context{test_fixtures_file: test_fixtures_file} = context,
+        paths,
+        binding
+      ) do
     unless Context.pre_existing_test_fixtures?(context) do
-      Mix.Generator.create_file(test_fixtures_file, Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/fixtures_module.ex", binding))
+      Mix.Generator.create_file(
+        test_fixtures_file,
+        Mix.Phoenix.eval_from(paths, "priv/templates/phx.gen.context/fixtures_module.ex.eex", binding)
+      )
     end
   end
 
-  defp inject_test_fixture(%Context{test_fixtures_file: test_fixtures_file} = context, paths, binding) do
+  defp inject_test_fixture(
+         %Context{test_fixtures_file: test_fixtures_file} = context,
+         paths,
+         binding
+       ) do
     ensure_test_fixtures_file_exists(context, paths, binding)
 
     paths
-    |> Mix.Phoenix.eval_from("priv/templates/phx.gen.context/fixtures.ex", binding)
+    |> Mix.Phoenix.eval_from("priv/templates/phx.gen.context/fixtures.ex.eex", binding)
     |> Mix.Phoenix.prepend_newline()
     |> inject_eex_before_final_end(test_fixtures_file, binding)
 
@@ -214,20 +283,14 @@ defmodule Mix.Tasks.Phx.Gen.Context do
       )
 
     if Enum.any?(fixture_functions_needing_implementations) do
-      Mix.shell.info(
-        """
+      Mix.shell().info("""
 
-        Some of the generated database columns are unique. Please provide
-        unique implementations for the following fixture function(s) in
-        #{context.test_fixtures_file}:
+      Some of the generated database columns are unique. Please provide
+      unique implementations for the following fixture function(s) in
+      #{context.test_fixtures_file}:
 
-        #{
-          fixture_functions_needing_implementations
-          |> Enum.map_join(&indent(&1, 2))
-          |> String.trim_trailing()
-        }
-        """
-      )
+      #{fixture_functions_needing_implementations |> Enum.map_join(&indent(&1, 2)) |> String.trim_trailing()}
+      """)
     end
   end
 
@@ -237,11 +300,11 @@ defmodule Mix.Tasks.Phx.Gen.Context do
     string
     |> String.split("\n")
     |> Enum.map_join(fn line ->
-        if String.trim(line) == "" do
-          "\n"
-        else
-          indent_string <> line <> "\n"
-        end
+      if String.trim(line) == "" do
+        "\n"
+      else
+        indent_string <> line <> "\n"
+      end
     end)
   end
 
@@ -273,37 +336,92 @@ defmodule Mix.Tasks.Phx.Gen.Context do
   end
 
   defp schema_access_template(%Context{schema: schema}) do
-    if schema.generate? do
-      "schema_access.ex"
-    else
-      "access_no_schema.ex"
+    cond do
+      schema.generate? && schema.scope ->
+        "schema_access_scope.ex.eex"
+
+      schema.generate? ->
+        "schema_access.ex.eex"
+
+      schema.scope ->
+        "access_no_schema_scope.ex.eex"
+
+      true ->
+        "access_no_schema.ex.eex"
     end
   end
 
-  defp validate_args!([context, schema, _plural | _] = args, help) do
+  defp validate_args!(
+         [maybe_context_name, schema_name_or_plural, plural_or_first_attr | schema_args],
+         optional,
+         help
+       ) do
+    has_context? =
+      case schema_name_or_plural do
+        <<char, _rest::binary>> when char in ?A..?Z -> true
+        _ -> not optional
+      end
+
+    {context, schema, plural, schema_args} =
+      if has_context? do
+        {maybe_context_name, schema_name_or_plural, plural_or_first_attr, schema_args}
+      else
+        # mix phx.gen.live User users name:string
+        # we generate the context from the plural "users" -> Users
+        context = Phoenix.Naming.camelize(schema_name_or_plural)
+
+        if context == maybe_context_name do
+          # if someone did
+          # mix phx.gen.live Users users name
+          Mix.raise("""
+          The given schema #{maybe_context_name} is equal to the camelized version of
+          the table plural #{schema_name_or_plural}, but the schema is expected to be singular.
+
+          Please pass an explicit context option like:
+
+              mix phx.gen.live #{context} #{maybe_context_name} #{schema_name_or_plural}
+
+          if this is what you want.
+          """)
+        end
+
+        {context, maybe_context_name, schema_name_or_plural, [plural_or_first_attr | schema_args]}
+      end
+
     cond do
       not Context.valid?(context) ->
-        help.raise_with_help "Expected the context, #{inspect context}, to be a valid module name"
+        help.raise_with_help(
+          "Expected the context, #{inspect(context)}, to be a valid module name"
+        )
+
       not Schema.valid?(schema) ->
-        help.raise_with_help "Expected the schema, #{inspect schema}, to be a valid module name"
+        help.raise_with_help("Expected the schema, #{inspect(schema)}, to be a valid module name")
+
       context == schema ->
-        help.raise_with_help "The context and schema should have different names"
+        help.raise_with_help("The context and schema should have different names")
+
       context == Mix.Phoenix.base() ->
-        help.raise_with_help "Cannot generate context #{context} because it has the same name as the application"
+        help.raise_with_help(
+          "Cannot generate context #{context} because it has the same name as the application"
+        )
+
       schema == Mix.Phoenix.base() ->
-        help.raise_with_help "Cannot generate schema #{schema} because it has the same name as the application"
+        help.raise_with_help(
+          "Cannot generate schema #{schema} because it has the same name as the application"
+        )
+
       true ->
-        args
+        {context, schema, plural, schema_args}
     end
   end
 
-  defp validate_args!(_, help) do
-    help.raise_with_help "Invalid arguments"
+  defp validate_args!(_, _, help) do
+    help.raise_with_help("Invalid arguments")
   end
 
   @doc false
   def raise_with_help(msg) do
-    Mix.raise """
+    Mix.raise("""
     #{msg}
 
     mix phx.gen.html, phx.gen.json, phx.gen.live, and phx.gen.context
@@ -311,19 +429,21 @@ defmodule Mix.Tasks.Phx.Gen.Context do
     of the generated resource, ending with any number of attributes.
     For example:
 
-        mix phx.gen.html Accounts User users name:string
-        mix phx.gen.json Accounts User users name:string
-        mix phx.gen.live Accounts User users name:string
+        mix phx.gen.html [Accounts] User users name:string
+        mix phx.gen.json [Accounts] User users name:string
+        mix phx.gen.live [Accounts] User users name:string
         mix phx.gen.context Accounts User users name:string
 
     The context serves as the API boundary for the given resource.
+    It is optional except for phx.gen.context.
     Multiple resources may belong to a context and a resource may be
     split over distinct contexts (such as Accounts.User and Payments.User).
-    """
+    """)
   end
 
   @doc false
   def prompt_for_code_injection(%Context{generate?: false}), do: :ok
+
   def prompt_for_code_injection(%Context{} = context) do
     if Context.pre_existing?(context) && !merge_with_existing_context?(context) do
       System.halt()
@@ -347,7 +467,7 @@ defmodule Mix.Tasks.Phx.Gen.Context do
 
         * If they are not closely related, another context probably works better
 
-      The fact two entities are related in the database does not mean they belong \
+      The fact that two entities are related in the database does not mean they belong \
       to the same context.
 
       If you are not sure, prefer creating a new context over adding to the existing one.

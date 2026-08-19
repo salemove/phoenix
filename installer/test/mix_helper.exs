@@ -11,41 +11,53 @@ defmodule MixHelper do
   end
 
   defp random_string(len) do
-    len |> :crypto.strong_rand_bytes() |> Base.encode64() |> binary_part(0, len)
+    len |> :crypto.strong_rand_bytes() |> Base.url_encode64() |> binary_part(0, len)
   end
 
   def in_tmp(which, function) do
-    path = Path.join([tmp_path(), random_string(10), to_string(which)])
+    base = Path.join([tmp_path(), random_string(10)])
+    path = Path.join([base, to_string(which)])
 
     try do
       File.rm_rf!(path)
       File.mkdir_p!(path)
       File.cd!(path, function)
     after
-      File.rm_rf!(path)
+      File.rm_rf!(base)
     end
   end
 
   def in_tmp_project(which, function) do
     conf_before = Application.get_env(:phoenix, :generators) || []
-    path = Path.join([tmp_path(), random_string(10), to_string(which)])
+    base = Path.join([tmp_path(), random_string(10)])
+    path = Path.join([base, to_string(which)])
 
     try do
       File.rm_rf!(path)
       File.mkdir_p!(path)
+
       File.cd!(path, fn ->
         File.touch!("mix.exs")
+
+        File.write!(".formatter.exs", """
+        [
+          import_deps: [:phoenix, :ecto, :ecto_sql],
+          inputs: ["*.exs"]
+        ]
+        """)
+
         function.()
       end)
     after
-      File.rm_rf!(path)
+      File.rm_rf!(base)
       Application.put_env(:phoenix, :generators, conf_before)
     end
   end
 
   def in_tmp_umbrella_project(which, function) do
     conf_before = Application.get_env(:phoenix, :generators) || []
-    path = Path.join([tmp_path(), random_string(10), to_string(which)])
+    base = Path.join([tmp_path(), random_string(10)])
+    path = Path.join([base, to_string(which)])
 
     try do
       apps_path = Path.join(path, "apps")
@@ -55,13 +67,15 @@ defmodule MixHelper do
       File.mkdir_p!(apps_path)
       File.mkdir_p!(config_path)
       File.touch!(Path.join(path, "mix.exs"))
+
       for file <- ~w(config.exs dev.exs test.exs prod.exs) do
         File.write!(Path.join(config_path, file), "import Config\n")
       end
+
       File.cd!(apps_path, function)
     after
       Application.put_env(:phoenix, :generators, conf_before)
-      File.rm_rf!(path)
+      File.rm_rf!(base)
     end
   end
 
@@ -70,7 +84,10 @@ defmodule MixHelper do
 
     try do
       capture_io(:stderr, fn ->
-        Mix.Project.in_project(app, path, [], fun)
+        Mix.Project.in_project(app, path, [prune_code_paths: false], fn mod ->
+          fun.(mod)
+          Mix.Project.clear_deps_cache()
+        end)
       end)
     after
       Mix.Project.push(name, file)
@@ -79,7 +96,20 @@ defmodule MixHelper do
 
   def assert_file(file) do
     assert File.regular?(file), "Expected #{file} to exist, but does not"
+    content = File.read!(file)
+
+    if not binary_file?(file) do
+      # \S\n\z matches non-whitespace followed by a single newline at EOF
+      assert content == "" or content =~ ~r/\S\n\z/,
+             "Expected #{file} to end with a single trailing newline"
+
+      refute content =~ "\n\n\n", "Expected #{file} to not contain consecutive blank lines"
+    end
+
+    content
   end
+
+  defp binary_file?(file), do: Path.extname(file) in ~w(.ico .pem .png)
 
   def refute_file(file) do
     refute File.regular?(file), "Expected #{file} to not exist, but it does"
@@ -88,13 +118,17 @@ defmodule MixHelper do
   def assert_file(file, match) do
     cond do
       is_list(match) ->
-        assert_file file, &(Enum.each(match, fn(m) -> assert &1 =~ m end))
+        assert_file(file, &Enum.each(match, fn m -> assert &1 =~ m end))
+
       is_binary(match) or is_struct(match, Regex) ->
-        assert_file file, &(assert &1 =~ match)
+        assert_file(file, &assert(&1 =~ match))
+
       is_function(match, 1) ->
-        assert_file(file)
-        match.(File.read!(file))
-      true -> raise inspect({file, match})
+        content = assert_file(file)
+        match.(content)
+
+      true ->
+        raise inspect({file, match})
     end
   end
 
@@ -112,12 +146,27 @@ defmodule MixHelper do
   def with_generator_env(app_name \\ :phoenix, new_env, fun) do
     config_before = Application.fetch_env(app_name, :generators)
     Application.put_env(app_name, :generators, new_env)
+
     try do
       fun.()
     after
       case config_before do
         {:ok, config} -> Application.put_env(app_name, :generators, config)
         :error -> Application.delete_env(app_name, :generators)
+      end
+    end
+  end
+
+  def with_scope_env(app_name, new_env, fun) do
+    config_before = Application.fetch_env(app_name, :scopes)
+    Application.put_env(app_name, :scopes, new_env)
+
+    try do
+      fun.()
+    after
+      case config_before do
+        {:ok, config} -> Application.put_env(app_name, :scopes, config)
+        :error -> Application.delete_env(app_name, :scopes)
       end
     end
   end
@@ -144,7 +193,8 @@ defmodule MixHelper do
   def flush do
     receive do
       _ -> flush()
-    after 0 -> :ok
+    after
+      0 -> :ok
     end
   end
 end

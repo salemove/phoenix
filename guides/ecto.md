@@ -1,6 +1,11 @@
 # Ecto
 
-> **Requirement**: This guide expects that you have gone through the [introductory guides](installation.html) and got a Phoenix application [up and running](up_and_running.html).
+> ### Requirement {: .tip}
+>
+> This guide expects that you have:
+>
+> * Gone through the [introductory guides](installation.html)
+> * Got a Phoenix application [up and running](up_and_running.html)
 
 Most web applications today need some form of data validation and persistence. In the Elixir ecosystem, we have `Ecto` to enable this. Before we jump into building database-backed web features, we're going to focus on the finer details of Ecto to give a solid base to build our web features on top of. Let's get started!
 
@@ -16,9 +21,9 @@ Newly generated Phoenix projects include Ecto with the PostgreSQL adapter by def
 
 Ecto also provides support for other databases and it has many learning resources available. Please check out [Ecto's README](https://github.com/elixir-ecto/ecto) for general information.
 
-This guide assumes that we have generated our new application with Ecto integration and that we will be using PostgreSQL. The introductory guides cover how to get your first application up and running. For instructions on switching to MySQL, please see the [Using MySQL](#using-mysql) section.
+This guide assumes that we have generated our new application with Ecto integration and that we will be using PostgreSQL. The introductory guides cover how to get your first application up and running. For using other databases, see the [Swapping Databases](swapping_databases.html) how-to guide.
 
-## Using the schema and migration generator
+## Using `phx.gen.schema`
 
 Once we have Ecto and PostgreSQL installed and configured, the easiest way to use Ecto is to generate an Ecto *schema* through the `phx.gen.schema` task. Ecto schemas are a way for us to specify how Elixir data types map to and from external sources, such as database tables. Let's generate a `User` schema with `name`, `email`, `bio`, and `number_of_pets` fields.
 
@@ -85,7 +90,7 @@ defmodule Hello.Repo.Migrations.CreateUsers do
       add :bio, :string
       add :number_of_pets, :integer
 
-      timestamps()
+      timestamps(type: :utc_datetime)
     end
   end
 end
@@ -97,15 +102,15 @@ And here's what that translates to in the actual `users` table.
 $ psql
 hello_dev=# \d users
 Table "public.users"
-Column         |            Type             | Modifiers
----------------+-----------------------------+----------------------------------------------------
-id             | bigint                      | not null default nextval('users_id_seq'::regclass)
-name           | character varying(255)      |
-email          | character varying(255)      |
-bio            | character varying(255)      |
-number_of_pets | integer                     |
-inserted_at    | timestamp without time zone | not null
-updated_at     | timestamp without time zone | not null
+Column         |            Type                | Modifiers
+---------------+--------------------------------+----------------------------------------------------
+id             | bigint                         | not null default nextval('users_id_seq'::regclass)
+name           | character varying(255)         |
+email          | character varying(255)         |
+bio            | character varying(255)         |
+number_of_pets | integer                        |
+inserted_at    | timestamp(0) without time zone | not null
+updated_at     | timestamp(0) without time zone | not null
 Indexes:
 "users_pkey" PRIMARY KEY, btree (id)
 ```
@@ -143,7 +148,7 @@ config :hello, Hello.Repo,
 ...
 ```
 
-We also have similar configuration in `config/test.exs` and `config/runtime.exs` (formerly `config/prod.secret.exs`) which can also be changed to match your actual credentials.
+We also have similar configuration in `config/test.exs` and `config/runtime.exs` which can also be changed to match your actual credentials.
 
 ## The schema
 
@@ -155,7 +160,6 @@ Here's the `User` schema that Phoenix generated for us.
 defmodule Hello.User do
   use Ecto.Schema
   import Ecto.Changeset
-  alias Hello.User
 
   schema "users" do
     field :bio, :string
@@ -163,7 +167,7 @@ defmodule Hello.User do
     field :name, :string
     field :number_of_pets, :integer
 
-    timestamps()
+    timestamps(type: :utc_datetime)
   end
 
   @doc false
@@ -246,7 +250,7 @@ iex> changeset.errors
 Now, let's make `number_of_pets` optional. In order to do this, we simply remove it from the list in the `changeset/2` function, in `Hello.User`.
 
 ```elixir
-    |> validate_required([:name, :email, :bio])
+|> validate_required([:name, :email, :bio])
 ```
 
 Now casting the changeset should tell us that only `name`, `email`, and `bio` can't be blank. We can test that by running `recompile()` inside IEx and then rebuilding our changeset.
@@ -307,7 +311,7 @@ iex> changeset = User.changeset(%User{}, params)
   errors: [],
   data: #Hello.User<>,
   valid?: true
-> 
+>
 ```
 
 Our new changeset is valid.
@@ -388,7 +392,7 @@ iex> changeset.errors[:email]
 {"has invalid format", [validation: :format]}
 ```
 
-There are many more validations and transformations we can perform in a changeset. Please see the [Ecto Changeset documentation](https://hexdocs.pm/ecto/Ecto.Changeset.html) for more information.
+There are many more validations and transformations we can perform in a changeset. Please see the [Ecto Changeset documentation](https://ecto.hexdocs.pm/Ecto.Changeset.html) for more information.
 
 ## Data persistence
 
@@ -404,32 +408,32 @@ iex> alias Hello.{Repo, User}
 
 iex> Repo.insert(%User{email: "user1@example.com"})
 [debug] QUERY OK db=6.5ms queue=0.5ms idle=1358.3ms
-INSERT INTO "users" ("email","inserted_at","updated_at") VALUES ($1,$2,$3) RETURNING "id" ["user1@example.com", ~N[2021-02-25 01:58:55], ~N[2021-02-25 01:58:55]]
+INSERT INTO "users" ("email","inserted_at","updated_at") VALUES ($1,$2,$3) RETURNING "id" ["user1@example.com", ~U[2021-02-25 01:58:55Z], ~U[2021-02-25 01:58:55Z]]
 {:ok,
  %Hello.User{
    __meta__: #Ecto.Schema.Metadata<:loaded, "users">,
    bio: nil,
    email: "user1@example.com",
    id: 1,
-   inserted_at: ~N[2021-02-25 01:58:55],
+   inserted_at: ~U[2021-02-25 01:58:55Z],
    name: nil,
    number_of_pets: nil,
-   updated_at: ~N[2021-02-25 01:58:55]
+   updated_at: ~U[2021-02-25 01:58:55Z]
  }}
 
 iex> Repo.insert(%User{email: "user2@example.com"})
 [debug] QUERY OK db=1.3ms idle=1402.7ms
-INSERT INTO "users" ("email","inserted_at","updated_at") VALUES ($1,$2,$3) RETURNING "id" ["user2@example.com", ~N[2021-02-25 02:03:28], ~N[2021-02-25 02:03:28]]
+INSERT INTO "users" ("email","inserted_at","updated_at") VALUES ($1,$2,$3) RETURNING "id" ["user2@example.com", ~U[2021-02-25 02:03:28Z], ~U[2021-02-25 02:03:28Z]]
 {:ok,
  %Hello.User{
    __meta__: #Ecto.Schema.Metadata<:loaded, "users">,
    bio: nil,
    email: "user2@example.com",
    id: 2,
-   inserted_at: ~N[2021-02-25 02:03:28],
+   inserted_at: ~U[2021-02-25 02:03:28Z],
    name: nil,
    number_of_pets: nil,
-   updated_at: ~N[2021-02-25 02:03:28]
+   updated_at: ~U[2021-02-25 02:03:28Z]
  }}
 ```
 
@@ -449,20 +453,20 @@ SELECT u0."id", u0."bio", u0."email", u0."name", u0."number_of_pets", u0."insert
     bio: nil,
     email: "user1@example.com",
     id: 1,
-    inserted_at: ~N[2021-02-25 01:58:55],
+    inserted_at: ~U[2021-02-25 01:58:55Z],
     name: nil,
     number_of_pets: nil,
-    updated_at: ~N[2021-02-25 01:58:55]
+    updated_at: ~U[2021-02-25 01:58:55Z]
   },
   %Hello.User{
     __meta__: #Ecto.Schema.Metadata<:loaded, "users">,
     bio: nil,
     email: "user2@example.com",
     id: 2,
-    inserted_at: ~N[2021-02-25 02:03:28],
+    inserted_at: ~U[2021-02-25 02:03:28Z],
     name: nil,
     number_of_pets: nil,
-    updated_at: ~N[2021-02-25 02:03:28]
+    updated_at: ~U[2021-02-25 02:03:28Z]
   }
 ]
 ```
@@ -479,10 +483,10 @@ SELECT u0."email" FROM "users" AS u0 []
 ["user1@example.com", "user2@example.com"]
 ```
 
-First, we imported [`Ecto.Query`], which imports the [`from/2`] macro of Ecto's Query DSL. Next, we built a query which selects all the email addresses in our users table. Let's try another example.
+First, we imported `Ecto.Query`, which imports the [`from/2`] macro of Ecto's Query DSL. Next, we built a query which selects all the email addresses in our users table. Let's try another example.
 
 ```elixir
-iex)> Repo.one(from u in User, where: ilike(u.email, "%1%"),
+iex> Repo.one(from u in User, where: ilike(u.email, "%1%"),
                                select: count(u.id))
 [debug] QUERY OK source="users" db=1.6ms SELECT count(u0."id") FROM "users" AS u0 WHERE (u0."email" ILIKE '%1%') []
 1
@@ -500,92 +504,209 @@ SELECT u0."id", u0."email" FROM "users" AS u0 []
 ]
 ```
 
-That little query packed a big punch. It both fetched all user emails from the database and efficiently built a map of the results in one go. You should browse the [Ecto.Query documentation](https://hexdocs.pm/ecto/Ecto.Query.html#content) to see the breadth of supported query features.
+That little query packed a big punch. It both fetched all user emails from the database and efficiently built a map of the results in one go. You should browse the [Ecto.Query documentation](https://ecto.hexdocs.pm/Ecto.Query.html#content) to see the breadth of supported query features.
 
 In addition to inserts, we can also perform updates and deletes with [`Repo.update/2`] and [`Repo.delete/2`] to update or delete a single schema. Ecto also supports bulk persistence with the [`Repo.insert_all/3`], [`Repo.update_all/3`], and [`Repo.delete_all/2`] functions.
 
-There is quite a bit more that Ecto can do and we've only barely scratched the surface. With a solid Ecto foundation in place, we're now ready to continue building our app and integrate the web-facing application with our backend persistence. Along the way, we'll expand our Ecto knowledge and learn how to properly isolate our web interface from the underlying details of our system. Please take a look at the [Ecto documentation](https://hexdocs.pm/ecto/) for the rest of the story.
+There is quite a bit more that Ecto can do and we've only barely scratched the surface. With a solid Ecto foundation in place, we're now ready to continue building our app and integrate the web-facing application with our backend persistence. Along the way, we'll expand our Ecto knowledge and learn how to properly isolate our web interface from the underlying details of our system. Please take a look at the [Ecto documentation](https://ecto.hexdocs.pm/) for the rest of the story.
 
-In our [contexts guide](contexts.html), we'll find out how to wrap up our Ecto access and business logic behind modules that group related functionality. We'll see how Phoenix helps us design maintainable applications, and we'll find out about other neat Ecto features along the way.
+In our [Data modelling guides](contexts.html), we'll find out how to wrap up our Ecto access and business logic behind modules that group related functionality. We'll see how Phoenix helps us design maintainable applications, and we'll find out about other neat Ecto features along the way.
 
-## Using MySQL
+## Mix tasks
 
-Phoenix applications are configured to use PostgreSQL by default, but what if we want to use MySQL instead? In this guide, we'll walk through changing that default whether we are about to create a new application, or whether we have an existing one configured for PostgreSQL.
+Ecto comes with a collection of Mix tasks to make it easier to manage your database and your application. Here is a quick look into the most important ones.
 
-If we are about to create a new application, configuring our application to use MySQL is easy. We can simply pass the `--database mysql` flag to `phx.new` and everything will be configured correctly.
+### `mix ecto.create`
+
+This task will create the database specified by our application repositories, but we can pass in another repo if we want.
+
+Here's what it looks like in action.
 
 ```console
-$ mix phx.new hello_phoenix --database mysql
+$ mix ecto.create
+The database for Hello.Repo has been created.
 ```
 
-This will set up all the correct dependencies and configuration for us automatically. Once we install those dependencies with `mix deps.get`, we'll be ready to begin working with Ecto in our application.
+There are a few things that can go wrong with `ecto.create`. If our Postgres database doesn't have a "postgres" role (user), we'll get an error like this one.
 
-If we have an existing application, all we need to do is switch adapters and make some small configuration changes.
+```console
+$ mix ecto.create
+** (Mix) The database for Hello.Repo couldn't be created, reason given: psql: FATAL:  role "postgres" does not exist
+```
 
-To switch adapters, we need to remove the Postgrex dependency and add a new one for Myxql instead.
+We can fix this by creating the "postgres" role in the `psql` console with the permissions needed to log in and create a database.
 
-Let's open up our `mix.exs` file and do that now.
+```console
+=# CREATE ROLE postgres LOGIN CREATEDB;
+CREATE ROLE
+```
+
+If the "postgres" role does not have permission to log in to the application, we'll get this error.
+
+```console
+$ mix ecto.create
+** (Mix) The database for Hello.Repo couldn't be created, reason given: psql: FATAL:  role "postgres" is not permitted to log in
+```
+
+To fix this, we need to change the permissions on our "postgres" user to allow login.
+
+```console
+=# ALTER ROLE postgres LOGIN;
+ALTER ROLE
+```
+
+If the "postgres" role does not have permission to create a database, we'll get this error.
+
+```console
+$ mix ecto.create
+** (Mix) The database for Hello.Repo couldn't be created, reason given: ERROR:  permission denied to create database
+```
+
+To fix this, we need to change the permissions on our "postgres" user in the `psql` console  to allow database creation.
+
+```console
+=# ALTER ROLE postgres CREATEDB;
+ALTER ROLE
+```
+
+If the "postgres" role is using a password different from the default "postgres", we'll get this error.
+
+```console
+$ mix ecto.create
+** (Mix) The database for Hello.Repo couldn't be created, reason given: psql: FATAL:  password authentication failed for user "postgres"
+```
+
+To fix this, we can change the password in the environment specific configuration file. For the development environment the password used can be found at the bottom of the `config/dev.exs` file.
+
+Finally, if we happen to have another repo called `OurCustom.Repo` that we want to create the database for, we can run this.
+
+```console
+$ mix ecto.create -r OurCustom.Repo
+The database for OurCustom.Repo has been created.
+```
+
+### `mix ecto.drop`
+
+This task will drop the database specified in our repo. By default it will look for the repo named after our application (the one generated with our app unless we opted out of Ecto). It will not prompt us to check if we're sure we want to drop the database, so do exercise caution.
+
+```console
+$ mix ecto.drop
+The database for Hello.Repo has been dropped.
+```
+
+### `mix ecto.gen.migration`
+
+Migrations are a programmatic, repeatable way to affect changes to a database schema. Phoenix generators take care of generating migrations for us whenever we create a new context or schema, but if you want to generate a migration from scratch, `mix ecto.gen.migration` has our back. Let's see an example.
+
+We simply need to invoke the task with a `snake_case` version of the module name that we want. Preferably, the name will describe what we want the migration to do.
+
+```console
+$ mix ecto.gen.migration add_comments_table
+* creating priv/repo/migrations
+* creating priv/repo/migrations/20150318001628_add_comments_table.exs
+```
+
+Notice that the migration's filename begins with a string representation of the date and time the file was created.
+
+Let's take a look at the file `ecto.gen.migration` has generated for us at `priv/repo/migrations/20150318001628_add_comments_table.exs`.
 
 ```elixir
-defmodule HelloPhoenix.MixProject do
-  use Mix.Project
+defmodule Hello.Repo.Migrations.AddCommentsTable do
+  use Ecto.Migration
 
-  . . .
-  # Specifies your project dependencies.
-  #
-  # Type `mix help deps` for examples and options.
-  defp deps do
-    [
-      {:phoenix, "~> 1.4.0"},
-      {:phoenix_ecto, "~> 4.4"},
-      {:ecto_sql, "~> 3.6"},
-      {:myxql, ">= 0.0.0"},
-      ...
-    ]
+  def change do
   end
 end
 ```
 
-Next, we need to configure our adapter to use the default MySQL credentials by updating `config/dev.exs`:
+Notice that there is a single function `change/0` which will handle both forward migrations and rollbacks. We'll define the schema changes that we want using Ecto's handy DSL, and Ecto will figure out what to do depending on whether we are rolling forward or rolling back. Very nice indeed.
+
+What we want to do is create a `comments` table with a `body` column, a `word_count` column, and timestamp columns for `inserted_at` and `updated_at`.
 
 ```elixir
-config :hello_phoenix, HelloPhoenix.Repo,
-username: "root",
-password: "",
-database: "hello_phoenix_dev"
+...
+def change do
+  create table(:comments) do
+    add :body, :string
+    add :word_count, :integer
+
+    timestamps(type: :utc_datetime)
+  end
+end
+...
 ```
 
-If we have an existing configuration block for our `HelloPhoenix.Repo`, we can simply change the values to match our new ones. You also need to configure the correct values in the `config/test.exs` and `config/runtime.exs` (formerly `config/prod.secret.exs`) files as well.
+For more information on how to modify your database schema please refer to the
+[Ecto's migration DSL docs](https://ecto-sql.hexdocs.pm/Ecto.Migration.html).
+For example, to alter an existing schema see the documentation on Ecto’s
+[`alter/2`](`Ecto.Migration.alter/2`) function.
 
-The last change is to open up `lib/hello_phoenix/repo.ex` and make sure to set the `:adapter` to `Ecto.Adapters.MyXQL`.
+That's it! We're ready to run our migration.
 
-Now all we need to do is fetch our new dependency, and we'll be ready to go.
+### `mix ecto.migrate`
 
-```console
-$ mix do deps.get, compile
-```
-
-With our new adapter installed and configured, we're ready to create our database.
-
-```console
-$ mix ecto.create
-```
-
-The database for HelloPhoenix.Repo has been created.
-We're also ready to run any migrations, or do anything else with Ecto that we may choose.
+Once we have our migration module ready, we can simply run `mix ecto.migrate` to have our changes applied to the database. We have already used it earlier in this chapter, but let's take it for a spin once more for our newly generated migration.
 
 ```console
 $ mix ecto.migrate
-[info] == Running HelloPhoenix.Repo.Migrations.CreateUser.change/0 forward
-[info] create table users
-[info] == Migrated in 0.2s
+[info] == Running Hello.Repo.Migrations.AddCommentsTable.change/0 forward
+[info] create table comments
+[info] == Migrated in 0.1s
 ```
 
-## Other options
+When we first run `ecto.migrate`, it will create a table for us called `schema_migrations`. This will keep track of all the migrations which we run by storing the timestamp portion of the migration's filename.
 
-While Phoenix uses the `Ecto` project to interact with the data access layer, there are many other data access options, some even built into the Erlang standard library. [ETS](https://www.erlang.org/doc/man/ets.html) – available in Ecto via [`etso`](https://hexdocs.pm/etso/) – and [DETS](https://www.erlang.org/doc/man/dets.html) are key-value data stores built into [OTP](https://www.erlang.org/doc/). OTP also provides a relational database called [Mnesia](https://www.erlang.org/doc/man/mnesia.html) with its own query language called QLC. Both Elixir and Erlang also have a number of libraries for working with a wide range of popular data stores.
+Here's what the `schema_migrations` table looks like.
 
-The data world is your oyster, but we won't be covering these options in these guides.
+```console
+hello_dev=# select * from schema_migrations;
+version        |     inserted_at
+---------------+---------------------
+20250317170448 | 2025-03-17 21:07:26
+20250318001628 | 2025-03-18 01:45:00
+(2 rows)
+```
+
+When we roll back a migration, `mix ecto.rollback`, to be discussed next, we will remove the record representing this migration from `schema_migrations`.
+
+By default, `ecto.migrate` will execute all pending migrations. We can exercise more control over which migrations we run by specifying some options when we run the task.
+
+We can specify the number of pending migrations we would like to run with the `-n` or `--step` options.
+
+```console
+$ mix ecto.migrate -n 2
+[info] == Running Hello.Repo.Migrations.CreatePost.change/0 forward
+[info] create table posts
+[info] == Migrated in 0.0s
+[info] == Running Hello.Repo.Migrations.AddCommentsTable.change/0 forward
+[info] create table comments
+[info] == Migrated in 0.0s
+```
+
+The `--step` option will behave the same way.
+
+```console
+$ mix ecto.migrate --step 2
+```
+
+The `--to` option will run all migrations up to and including given version.
+
+```console
+$ mix ecto.migrate --to 20150317170448
+```
+
+### `mix ecto.rollback`
+
+The `mix ecto.rollback` task will reverse the last migration we have run, undoing the schema changes. `ecto.migrate` and `ecto.rollback` are mirror images of each other.
+
+```console
+$ mix ecto.rollback
+[info] == Running Hello.Repo.Migrations.AddCommentsTable.change/0 backward
+[info] drop table comments
+[info] == Migrated in 0.0s
+```
+
+`ecto.rollback` will handle the same options as `ecto.migrate`, so `-n`, `--step`, `-v`, and `--to` will behave as they do for `ecto.migrate`.
 
 [`cast/3`]: `Ecto.Changeset.cast/3`
 [`from/2`]: `Ecto.Query.from/2`

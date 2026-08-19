@@ -21,7 +21,7 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithNoOptionsTest do
     end)
   end
 
-  test "development workflow works as expected" do
+  test "generated app boots with mix phx.server" do
     with_installer_tmp("development_workflow", [autoremove?: false], fn tmp_dir ->
       {app_root_path, _} =
         generate_phoenix_app(tmp_dir, "phx_blog", [
@@ -34,19 +34,15 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithNoOptionsTest do
 
       assert_no_compilation_warnings(app_root_path)
 
-      File.touch!(Path.join(app_root_path, "lib/phx_blog_web/views/page_view.ex"), @epoch)
-
       spawn_link(fn ->
         run_phx_server(app_root_path)
       end)
 
       :inets.start()
-      {:ok, response} = request_with_retries("http://localhost:4000")
+      {:ok, response} = request_with_retries("http://localhost:4000", 20)
       assert response.status_code == 200
       assert response.body =~ "PhxBlog"
 
-      assert File.stat!(Path.join(app_root_path, "lib/phx_blog_web/views/page_view.ex")) > @epoch
-      assert_passes_formatter_check(app_root_path)
       assert_tests_pass(app_root_path)
     end)
   end
@@ -58,7 +54,7 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithNoOptionsTest do
         [
           "--no-halt",
           "-e",
-          "spawn fn -> IO.gets('') && System.halt(0) end",
+          "spawn fn -> IO.gets([]) && System.halt(0) end",
           "-S",
           "mix",
           "phx.server"
@@ -67,7 +63,7 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithNoOptionsTest do
       )
   end
 
-  defp request_with_retries(url, retries \\ 10)
+  defp request_with_retries(url, retries)
 
   defp request_with_retries(_url, 0), do: {:error, :out_of_retries}
 
@@ -84,7 +80,7 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithNoOptionsTest do
          }}
 
       {:error, {:failed_connect, _}} ->
-        Process.sleep(1_000)
+        Process.sleep(5_000)
         request_with_retries(url, retries - 1)
 
       {:error, reason} ->

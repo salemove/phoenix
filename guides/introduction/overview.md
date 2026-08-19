@@ -4,7 +4,7 @@ Phoenix is a web development framework written in Elixir which implements the se
 
 Phoenix provides the best of both worlds - high developer productivity _and_ high application performance. It also has some interesting new twists like channels for implementing realtime features and pre-compiled templates for blazing speed.
 
-If you are already familiar with Elixir, great! If not, there are a number of places to learn. The [Elixir guides](https://elixir-lang.org/getting-started/introduction.html) and the [Elixir learning resources page](https://elixir-lang.org/learning.html) are two great places to start.
+If you are already familiar with Elixir, great! If not, there are a number of places to learn. The [Elixir guides](https://elixir.hexdocs.pm/introduction.html) and the [Elixir learning resources page](https://elixir-lang.org/learning.html) are two great places to start.
 
 The guides that you are currently looking at provide an overview of all parts that make Phoenix. Here is a rundown of what they provide:
 
@@ -12,7 +12,9 @@ The guides that you are currently looking at provide an overview of all parts th
 
   * Guides - in-depth guides covering the main components in Phoenix and Phoenix applications
 
-  * Authentication - in-depth guide covering how to use `mix phx.gen.auth`
+  * Data modelling - building the initial features of an e-commerce application to learn about more data modelling with Phoenix
+
+  * Authn and Authz - learn how to use the tools Phoenix provides for authentication and authorization
 
   * Real-time components - in-depth guides covering Phoenix's built-in real-time components
 

@@ -1,6 +1,11 @@
 # Channels
 
-> **Requirement**: This guide expects that you have gone through the [introductory guides](installation.html) and got a Phoenix application [up and running](up_and_running.html).
+> ### Requirement {: .tip}
+>
+> This guide expects that you have:
+>
+> * Gone through the [introductory guides](installation.html)
+> * Got a Phoenix application [up and running](up_and_running.html)
 
 Channels are an exciting part of Phoenix that enable soft real-time communication with and between millions of connected clients.
 
@@ -42,7 +47,7 @@ All the client needs is a suitable library; see the [Client Libraries](#client-l
 Each client library communicates using one of the "transports" that Channels understand.
 Currently, that's either Websockets or long polling, but other transports may be added in the future.
 
-Unlike stateless HTTP connections, Channels support long-lived connections, each backed by a lightweight BEAM process, working in parallel and maintaining its own state.
+Unlike stateless HTTP connections, Channels support long-lived connections, each backed by a lightweight Erlang VM process, working in parallel and maintaining its own state.
 
 This architecture scales well; Phoenix Channels [can support millions of subscribers with reasonable latency on a single box](https://phoenixframework.org/blog/the-road-to-2-million-websocket-connections), passing hundreds of thousands of messages per second.
 And that capacity can be multiplied by adding more nodes to the cluster.
@@ -107,7 +112,8 @@ In your Phoenix app's `Endpoint` module, a `socket` declaration specifies which 
 ```elixir
 socket "/socket", HelloWeb.UserSocket,
   websocket: true,
-  longpoll: false
+  longpoll: false,
+  auth_token: true
 ```
 
 Phoenix comes with two default transports: websocket and longpoll. You can configure them directly via the `socket` declaration.
@@ -117,7 +123,7 @@ Phoenix comes with two default transports: websocket and longpoll. You can confi
 On the client side, you will establish a socket connection to the route above:
 
 ```javascript
-let socket = new Socket("/socket", {params: {token: window.userToken}})
+let socket = new Socket("/socket", {authToken: window.userToken})
 ```
 
 On the server, Phoenix will invoke `HelloWeb.UserSocket.connect/2`, passing your parameters and the initial socket state. Within the socket, you can authenticate and identify a socket connection and set default socket assigns. The socket is also where you define your channel routes.
@@ -144,7 +150,8 @@ Topics are string identifiers - names that the various layers use in order to ma
 
 ### Messages
 
-The `Phoenix.Socket.Message` module defines a struct with the following keys which denotes a valid message. From the [Phoenix.Socket.Message docs](https://hexdocs.pm/phoenix/Phoenix.Socket.Message.html).
+The `Phoenix.Socket.Message` module defines a struct with the following keys which denotes a valid message. From the [Phoenix.Socket.Message docs](https://phoenix.hexdocs.pm/Phoenix.Socket.Message.html).
+
 - `topic` - The string topic or `"topic:subtopic"` pair namespace, such as `"messages"` or `"messages:123"`
 - `event` - The string event name, for example `"phx_join"`
 - `payload` - The message payload
@@ -157,18 +164,18 @@ PubSub is provided by the `Phoenix.PubSub` module. Interested parties can receiv
 This is useful to broadcast messages on channel and also for application development in general. For instance, letting all connected [live views](https://github.com/phoenixframework/phoenix_live_view) to know that a new comment has been added to a post.
 
 The PubSub system takes care of getting messages from one node to another so that they can be sent to all subscribers across the cluster.
-By default, this is done using [Phoenix.PubSub.PG2](https://hexdocs.pm/phoenix_pubsub/Phoenix.PubSub.PG2.html), which uses native BEAM messaging.
+By default, this is done using [Phoenix.PubSub.PG2](https://phoenix-pubsub.hexdocs.pm/Phoenix.PubSub.PG2.html), which uses native Erlang VM messaging.
 
-If your deployment environment does not support distributed Elixir or direct communication between servers, Phoenix also ships with a [Redis Adapter](https://hexdocs.pm/phoenix_pubsub_redis/Phoenix.PubSub.Redis.html) that uses Redis to exchange PubSub data. Please see the [Phoenix.PubSub docs](https://hexdocs.pm/phoenix_pubsub/Phoenix.PubSub.html) for more information.
+If your deployment environment does not support distributed Elixir or direct communication between servers, Phoenix also ships with a [Redis Adapter](https://phoenix-pubsub-redis.hexdocs.pm/Phoenix.PubSub.Redis.html) that uses Redis to exchange PubSub data. Please see the [Phoenix.PubSub docs](https://phoenix-pubsub.hexdocs.pm/Phoenix.PubSub.html) for more information.
 
 ### Client Libraries
 
 Any networked device can connect to Phoenix Channels as long as it has a client library.
-The following libraries exist today, and new ones are always welcome.
+The following libraries exist today, and new ones are always welcome; to write your own, see our how-to guide [Writing a Channels Client](writing_a_channels_client.md).
 
 #### Official
 
-Phoenix ships with a JavaScript client that is available when generating a new Phoenix project. The documentation for the JavaScript module is available at [https://hexdocs.pm/phoenix/js/](https://hexdocs.pm/phoenix/js/); the code is in [multiple js files](https://github.com/phoenixframework/phoenix/blob/master/assets/js/phoenix/).
+Phoenix ships with a JavaScript client that is available when generating a new Phoenix project. The documentation for the JavaScript module is available at [https://phoenix.hexdocs.pm/js/](https://phoenix.hexdocs.pm/js/); the code is in [multiple js files](https://github.com/phoenixframework/phoenix/blob/main/assets/js/phoenix/).
 
 #### 3rd Party
 
@@ -182,12 +189,13 @@ Phoenix ships with a JavaScript client that is available when generating a new P
   - [PhoenixSharp](https://github.com/Mazyod/PhoenixSharp)
 + Elixir
   - [phoenix_gen_socket_client](https://github.com/Aircloak/phoenix_gen_socket_client)
+  - [slipstream](https://slipstream.hexdocs.pm/Slipstream.html)
 + GDScript (Godot Game Engine)
   - [GodotPhoenixChannels](https://github.com/alfredbaudisch/GodotPhoenixChannels)
 
 ## Tying it all together
 
-Let's tie all these ideas together by building a simple chat application. Make sure [you created a new Phoenix application](https://hexdocs.pm/phoenix/up_and_running.html) and now we are ready to generate the `UserSocket`.
+Let's tie all these ideas together by building a simple chat application. Make sure [you created a new Phoenix application](https://phoenix.hexdocs.pm/up_and_running.html) and now we are ready to generate the `UserSocket`.
 
 ### Generating a socket
 
@@ -276,7 +284,7 @@ import "./user_socket.js"
 
 Save the file and your browser should auto refresh, thanks to the Phoenix live reloader. If everything worked, we should see "Joined successfully" in the browser's JavaScript console. Our client and server are now talking over a persistent connection. Now let's make it useful by enabling chat.
 
-In `lib/hello_web/templates/page/index.html.heex`, we'll replace the existing code with a container to hold our chat messages, and an input field to send them:
+In `lib/hello_web/controllers/page_html/home.html.heex`, we'll replace the existing code with a container to hold our chat messages, and an input field to send them:
 
 ```heex
 <div id="messages" role="log" aria-live="polite"></div>
@@ -381,9 +389,26 @@ That's all there is to our basic chat app. Fire up multiple browser tabs and you
 
 ## Using Token Authentication
 
-When we connect, we'll often need to authenticate the client. Fortunately, this is a 4-step process with [Phoenix.Token](https://hexdocs.pm/phoenix/Phoenix.Token.html).
+When we connect, we'll often need to authenticate the client. Fortunately, this is a 5-step process with [Phoenix.Token](https://phoenix.hexdocs.pm/Phoenix.Token.html).
 
-**Step 1 - Assign a Token in the Connection**
+### Step 1 - Enable the `auth_token` functionality in the socket
+
+Phoenix supports a transport agnostic way to pass an authentication token to the server. To enable this, we need to pass the `:auth_token` option to the socket declaration in our `Endpoint` module.
+
+```elixir
+defmodule HelloWeb.Endpoint do
+  use Phoenix.Endpoint, otp_app: :hello
+
+  socket "/socket", HelloWeb.UserSocket,
+    websocket: true,
+    longpoll: false,
+    auth_token: true
+
+  ...
+end
+```
+
+### Step 2 - Assign a Token in the Connection
 
 Let's say we have an authentication plug in our app called `OurAuth`. When `OurAuth` authenticates a user, it sets a value for the `:current_user` key in `conn.assigns`. Since the `current_user` exists, we can simply assign the user's token in the connection for use in the layout. We can wrap that behavior up in a private function plug, `put_user_token/2`. This could also be put in its own module as well. To make this all work, we just add `OurAuth` and `put_user_token/2` to the browser pipeline.
 
@@ -406,23 +431,23 @@ end
 
 Now our `conn.assigns` contains the `current_user` and `user_token`.
 
-**Step 2 - Pass the Token to the JavaScript**
+### Step 3 - Pass the Token to the JavaScript
 
-Next, we need to pass this token to JavaScript. We can do so inside a script tag in `web/templates/layout/app.html.heex` right above the app.js script, as follows:
+Next, we need to pass this token to JavaScript. We can do so inside a script tag in `lib/hello_web/components/layouts/root.html.heex` right above the app.js script, as follows:
 
 ```heex
 <script>window.userToken = "<%= assigns[:user_token] %>";</script>
-<script src={~p"/assets/app.js"}></script>
+<script type="module" src={~p"/assets/js/app.js"}></script>
 ```
 
-**Step 3 - Pass the Token to the Socket Constructor and Verify**
+### Step 4 - Pass the Token to the Socket Constructor and Verify
 
-We also need to pass the `:params` to the socket constructor and verify the user token in the `connect/3` function. To do so, edit `web/channels/user_socket.ex`, as follows:
+We also need to pass the `:auth_token` to the socket constructor and verify the user token in the `connect/3` function. To do so, edit `lib/hello_web/channels/user_socket.ex`, as follows:
 
 ```elixir
-def connect(%{"token" => token}, socket, _connect_info) do
+def connect(_params_, socket, connect_info) do
   # max_age: 1209600 is equivalent to two weeks in seconds
-  case Phoenix.Token.verify(socket, "user socket", token, max_age: 1209600) do
+  case Phoenix.Token.verify(socket, "user socket", connect_info[:auth_token], max_age: 1209600) do
     {:ok, user_id} ->
       {:ok, assign(socket, :current_user, user_id)}
     {:error, reason} ->
@@ -434,17 +459,17 @@ end
 In our JavaScript, we can use the token set previously when constructing the Socket:
 
 ```javascript
-let socket = new Socket("/socket", {params: {token: window.userToken}})
+let socket = new Socket("/socket", {authToken: window.userToken})
 ```
 
 We used `Phoenix.Token.verify/4` to verify the user token provided by the client. `Phoenix.Token.verify/4` returns either `{:ok, user_id}` or `{:error, reason}`. We can pattern match on that return in a `case` statement. With a verified token, we set the user's id as the value to `:current_user` in the socket. Otherwise, we return `:error`.
 
-**Step 4 - Connect to the socket in JavaScript**
+### Step 5 - Connect to the socket in JavaScript
 
 With authentication set up, we can connect to sockets and channels from JavaScript.
 
 ```javascript
-let socket = new Socket("/socket", {params: {token: window.userToken}})
+let socket = new Socket("/socket", {authToken: window.userToken})
 socket.connect()
 ```
 
@@ -459,7 +484,7 @@ channel.join()
 export default socket
 ```
 
-Note that token authentication is preferable since it's transport agnostic and well-suited for long running-connections like channels, as opposed to using sessions or authentication approaches.
+Note that token authentication is preferable since it's transport agnostic and well-suited for long running-connections like channels, as opposed to using sessions or other authentication approaches.
 
 ## Fault Tolerance and Reliability Guarantees
 
@@ -475,10 +500,38 @@ Channel clients queue outgoing messages into a `PushBuffer`, and send them to th
 
 ### Resending Server Messages
 
-Phoenix uses an at-most-once strategy when sending messages to clients. If the client is offline and misses the message, Phoenix won't resend it. Phoenix doesn't persist messages on the server. If the server restarts, unsent messages will be gone. If our application needs stronger guarantees around message delivery, we'll need to write that code ourselves. Common approaches involve persisting messages on the server and having clients request missing messages. For an example, see Chris McCord's Phoenix training: [client code](https://github.com/chrismccord/elixirconf_training/blob/master/web/static/js/app.js#L38-L39) and [server code](https://github.com/chrismccord/elixirconf_training/blob/master/web/channels/document_channel.ex#L13-L19).
+Phoenix uses an at-most-once strategy when sending messages to clients. If the client is offline and misses the message, Phoenix won't resend it. Phoenix doesn't persist messages on the server. If the server restarts, unsent messages will be gone. If our application needs stronger guarantees around message delivery, we'll need to write that code ourselves. Common approaches involve persisting messages on the server and having clients request missing messages. 
+
+For example, you can track a `last_seen_id` (or `last_updated_at`) on the client. On join, the client will pass the `last_seen_id` via the channel params for the last thing it saw, which lets the server know how to catch the client up with side effects that have happened since that id. On the client, anytime an event is received for a "new_message", the client bumps its `last_seen_id` so that it can recover gracefully across disconnect/reconnect. The code might look something like this:
+
+```javascript
+// on the client
+let socket = new Socket(...)
+
+let lastSeenMsg = {}
+let roomParams = () => lastSeenMsg.id ? {last_seen_id: lastSeenMsg.id} : {}
+let roomChannel = socket.channel("rooms:123", roomParams)
+
+roomChannel.on("new_message", msg => {
+  lastSeenMsg = msg
+  renderNewMessage(msg)
+})
+
+roomChannel.join().receive("ok", ({messages}) => {
+  lastSeenMsg = messages[messages.length - 1]
+  renderMessages(messages)
+})
+```
+
+```elixir
+# room_channel.ex on the server
+def join("rooms:" <> id, params, socket) do
+  ...
+  messages = fetch_messages_since(params["last_seen_id"])
+  {:ok, %{messages: messages}, socket}
+end
+```
 
 ## Example Application
 
 To see an example of the application we just built, checkout the project [phoenix_chat_example](https://github.com/chrismccord/phoenix_chat_example).
-
-You can also see a live demo at <https://phoenixchat.herokuapp.com/>.

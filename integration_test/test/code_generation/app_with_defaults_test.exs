@@ -102,7 +102,7 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithDefaultsTest do
         modify_file(Path.join(app_root_path, "lib/phx_blog_web/router.ex"), fn file ->
           inject_before_final_end(file, """
 
-            scope "/", PhxBlogWeb do
+            scope "/api", PhxBlogWeb do
               pipe_through [:api]
 
               resources "/posts", PostController, except: [:new, :edit]
@@ -130,11 +130,9 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithDefaultsTest do
               pipe_through [:browser]
 
               live "/posts", PostLive.Index, :index
-              live "/posts/new", PostLive.Index, :new
-              live "/posts/:id/edit", PostLive.Index, :edit
-
+              live "/posts/new", PostLive.Form, :new
               live "/posts/:id", PostLive.Show, :show
-              live "/posts/:id/show/edit", PostLive.Show, :edit
+              live "/posts/:id/edit", PostLive.Form, :edit
             end
           """)
         end)
@@ -158,11 +156,9 @@ defmodule Phoenix.Integration.CodeGeneration.AppWithDefaultsTest do
               pipe_through [:browser]
 
               live "/posts", PostLive.Index, :index
-              live "/posts/new", PostLive.Index, :new
-              live "/posts/:id/edit", PostLive.Index, :edit
-
+              live "/posts/new", PostLive.Form, :new
               live "/posts/:id", PostLive.Show, :show
-              live "/posts/:id/show/edit", PostLive.Show, :edit
+              live "/posts/:id/edit", PostLive.Form, :edit
             end
           """)
         end)

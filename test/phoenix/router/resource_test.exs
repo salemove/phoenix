@@ -3,7 +3,7 @@ defmodule Phoenix.Router.ResourceTest do
   use RouterHelper
 
   defmodule Api.GenericController do
-    use Phoenix.Controller
+    use Phoenix.Controller, formats: []
     def show(conn, _params), do: text(conn, "show")
     def new(conn, _params), do: text(conn, "new")
     def edit(conn, _params), do: text(conn, "edit")
@@ -24,7 +24,7 @@ defmodule Phoenix.Router.ResourceTest do
   end
 
   setup do
-    Logger.disable(self())
+    Logger.put_process_level(self(), :none)
     :ok
   end
 

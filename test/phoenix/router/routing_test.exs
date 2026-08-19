@@ -10,7 +10,7 @@ defmodule Phoenix.Router.RoutingTest do
   end
 
   defmodule UserController do
-    use Phoenix.Controller
+    use Phoenix.Controller, formats: []
     def index(conn, _params), do: text(conn, "users index")
     def show(conn, _params), do: text(conn, "users show")
     def top(conn, _params), do: text(conn, "users top")
@@ -39,10 +39,12 @@ defmodule Phoenix.Router.RoutingTest do
 
   defmodule Router do
     use Phoenix.Router
+    import ExUnit.Assertions, except: [trace: 3]
 
     get "/", UserController, :index, as: :users
     get "/users/top", UserController, :top, as: :top
     get "/users/:id", UserController, :show, as: :users, metadata: %{access: :user}
+    match :*, "/users/fallback", UserController, :any
     get "/spaced users/:id", UserController, :show
     get "/profiles/profile-:id", UserController, :show
     get "/route_that_crashes", UserController, :crash
@@ -51,7 +53,6 @@ defmodule Phoenix.Router.RoutingTest do
     get "/static/images/icons/*image", UserController, :image
     get "/exit", UserController, :exit
     get "/halt-controller", UserController, :halt
-
     trace("/trace", UserController, :trace)
     options "/options", UserController, :options
     connect "/connect", UserController, :connect
@@ -62,11 +63,13 @@ defmodule Phoenix.Router.RoutingTest do
       pipe_through :noop
       get "/plug", SomePlug, []
       get "/users/:id/raise", UserController, :raise
+      pipe_through :halt
+      get "/info", UserController, :raise
     end
 
     get "/no_log", SomePlug, [], log: false
     get "/fun_log", SomePlug, [], log: {LogLevel, :log_level, []}
-    get "/override-plug-name", SomePlug, :action, metadata: %{log_module: PlugOverride}
+    get "/override-plug-name", SomePlug, :action, metadata: %{mfa: {LogLevel, :log_level, 1}}
     get "/users/:user_id/files/:id", UserController, :image
 
     scope "/halt-plug" do
@@ -84,7 +87,7 @@ defmodule Phoenix.Router.RoutingTest do
   end
 
   setup do
-    Logger.disable(self())
+    Logger.put_process_level(self(), :none)
     :ok
   end
 
@@ -233,9 +236,21 @@ defmodule Phoenix.Router.RoutingTest do
     assert conn.resp_body == "users any"
   end
 
+  test "different verbs with similar paths" do
+    conn = call(Router, :post, "/users/fallback")
+    assert conn.status == 200
+    assert conn.resp_body == "users any"
+
+    conn = call(Router, :get, "/users/123")
+    assert conn.status == 200
+    assert conn.resp_body == "users show"
+    assert conn.params["id"] == "123"
+    assert conn.path_params["id"] == "123"
+  end
+
   describe "logging" do
     setup do
-      Logger.enable(self())
+      Logger.delete_process_level(self())
       :ok
     end
 
@@ -270,7 +285,7 @@ defmodule Phoenix.Router.RoutingTest do
 
     test "overrides plug name that processes the route when set in metadata" do
       assert capture_log(fn -> call(Router, :get, "/override-plug-name") end) =~
-               "Processing with PlugOverride"
+               "Processing with Phoenix.Router.RoutingTest.LogLevel.log_level/1"
     end
 
     test "logs custom level when log is set to a 1-arity function" do
@@ -310,6 +325,8 @@ defmodule Phoenix.Router.RoutingTest do
         end,
         nil
       )
+
+      on_exit(fn -> :telemetry.detach(test_name) end)
     end
 
     test "phoenix.router_dispatch.start and .stop are emitted on success" do
@@ -472,46 +489,59 @@ defmodule Phoenix.Router.RoutingTest do
     end
   end
 
-  test "route_info returns route string, path params, and more" do
-    assert Phoenix.Router.route_info(Router, "GET", "foo/bar/baz", nil) == %{
-             log: :debug,
-             path_params: %{"path" => ["foo", "bar", "baz"]},
-             pipe_through: [],
-             plug: Phoenix.Router.RoutingTest.UserController,
-             plug_opts: :not_found,
-             route: "/*path"
-           }
+  describe "route_info" do
+    test " returns route string, path params, and more" do
+      assert Phoenix.Router.route_info(Router, "GET", "foo/bar/baz", nil) == %{
+               log: :debug,
+               path_params: %{"path" => ["foo", "bar", "baz"]},
+               pipe_through: [],
+               plug: Phoenix.Router.RoutingTest.UserController,
+               plug_opts: :not_found,
+               route: "/*path"
+             }
 
-    assert Phoenix.Router.route_info(Router, "GET", "users/1", nil) == %{
-             log: :debug,
-             path_params: %{"id" => "1"},
-             pipe_through: [],
-             plug: Phoenix.Router.RoutingTest.UserController,
-             plug_opts: :show,
-             route: "/users/:id",
-             access: :user
-           }
+      assert Phoenix.Router.route_info(Router, "GET", "users/1", nil) == %{
+               log: :debug,
+               path_params: %{"id" => "1"},
+               pipe_through: [],
+               plug: Phoenix.Router.RoutingTest.UserController,
+               plug_opts: :show,
+               route: "/users/:id",
+               access: :user
+             }
 
-    assert Phoenix.Router.route_info(Router, "GET", "/", "host") == %{
-             log: :debug,
-             path_params: %{},
-             pipe_through: [],
-             plug: Phoenix.Router.RoutingTest.UserController,
-             plug_opts: :index,
-             route: "/"
-           }
+      assert Phoenix.Router.route_info(Router, "GET", "/", "host") == %{
+               log: :debug,
+               path_params: %{},
+               pipe_through: [],
+               plug: Phoenix.Router.RoutingTest.UserController,
+               plug_opts: :index,
+               route: "/"
+             }
 
-    assert Phoenix.Router.route_info(Router, "POST", "/not-exists", "host") == :error
-  end
+      assert Phoenix.Router.route_info(Router, "POST", "/not-exists", "host") == :error
+    end
 
-  test "route_info returns route string, path params and more for split path" do
-    assert Phoenix.Router.route_info(Router, "GET", ~w(foo bar baz), nil) == %{
-             log: :debug,
-             path_params: %{"path" => ["foo", "bar", "baz"]},
-             pipe_through: [],
-             plug: Phoenix.Router.RoutingTest.UserController,
-             plug_opts: :not_found,
-             route: "/*path"
-           }
+    test "returns route string, path params and more for split path" do
+      assert Phoenix.Router.route_info(Router, "GET", ~w(foo bar baz), nil) == %{
+               log: :debug,
+               path_params: %{"path" => ["foo", "bar", "baz"]},
+               pipe_through: [],
+               plug: Phoenix.Router.RoutingTest.UserController,
+               plug_opts: :not_found,
+               route: "/*path"
+             }
+    end
+
+    test "returns accumulated pipe_through metadata" do
+      assert Phoenix.Router.route_info(Router, "GET", "/info", nil) == %{
+               log: :info,
+               path_params: %{},
+               pipe_through: [:noop, :halt],
+               plug: Phoenix.Router.RoutingTest.UserController,
+               plug_opts: :raise,
+               route: "/info"
+             }
+    end
   end
 end

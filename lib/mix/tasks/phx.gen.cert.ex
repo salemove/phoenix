@@ -10,16 +10,13 @@ defmodule Mix.Tasks.Phx.Gen.Cert do
   environment, such as running a development server on `localhost`.
   For production, staging, or testing servers on the public internet, obtain a
   proper certificate, for example from [Let's Encrypt](https://letsencrypt.org).
-
-  NOTE: when using Google Chrome, open chrome://flags/#allow-insecure-localhost
-  to enable the use of self-signed certificates on `localhost`.
   """
 
   @moduledoc """
   Generates a self-signed certificate for HTTPS testing.
 
       $ mix phx.gen.cert
-      $ mix phx.gen.cert my-app my-app.local my-app.internal.example.com
+      $ mix phx.gen.cert my-app.localhost my-app.internal.example.com
 
   Creates a private key and a self-signed certificate in PEM format. These
   files can be referenced in the `certfile` and `keyfile` parameters of an
@@ -49,7 +46,9 @@ defmodule Mix.Tasks.Phx.Gen.Cert do
   @doc false
   def run(all_args) do
     if Mix.Project.umbrella?() do
-      Mix.raise("mix phx.gen.cert must be invoked from within your *_web application root directory")
+      Mix.raise(
+        "mix phx.gen.cert must be invoked from within your *_web application root directory"
+      )
     end
 
     {opts, args} =
@@ -123,8 +122,10 @@ defmodule Mix.Tasks.Phx.Gen.Cert do
     configuration in config/dev.exs:
 
       config #{inspect(app)}, #{inspect(Mix.Phoenix.web_module(base))}.Endpoint,
-        http: [port: 4000],
+        ...,
         https: [
+          # Change to `ip: {0, 0, 0, 0}` to allow access from other machines
+          ip: {127, 0, 0, 1},
           port: 4001,
           cipher_suite: :strong,
           certfile: "#{certfile}",
@@ -233,35 +234,33 @@ defmodule Mix.Tasks.Phx.Gen.Cert do
   defp new_cert(public_key, common_name, hostnames) do
     <<serial::unsigned-64>> = :crypto.strong_rand_bytes(8)
 
-    # Dates must be in 'YYMMDD' format
-    {{year, month, day}, _} =
-      :erlang.timestamp()
-      |> :calendar.now_to_datetime()
+    today = Date.utc_today()
 
-    yy = year |> Integer.to_string() |> String.slice(2, 2)
-    mm = month |> Integer.to_string() |> String.pad_leading(2, "0")
-    dd = day |> Integer.to_string() |> String.pad_leading(2, "0")
+    not_before =
+      today
+      |> Date.to_iso8601(:basic)
+      |> String.slice(2, 6)
 
-    not_before = yy <> mm <> dd
-
-    yy2 = (year + 1) |> Integer.to_string() |> String.slice(2, 2)
-
-    not_after = yy2 <> mm <> dd
+    not_after =
+      today
+      |> Date.add(365)
+      |> Date.to_iso8601(:basic)
+      |> String.slice(2, 6)
 
     otp_tbs_certificate(
       version: :v3,
       serialNumber: serial,
-      signature: signature_algorithm(algorithm: @sha256WithRSAEncryption, parameters: :NULL),
+      signature: signature_algorithm(algorithm: @sha256WithRSAEncryption),
       issuer: rdn(common_name),
       validity:
         validity(
-          notBefore: {:utcTime, '#{not_before}000000Z'},
-          notAfter: {:utcTime, '#{not_after}000000Z'}
+          notBefore: {:utcTime, ~c"#{not_before}000000Z"},
+          notAfter: {:utcTime, ~c"#{not_after}000000Z"}
         ),
       subject: rdn(common_name),
       subjectPublicKeyInfo:
         otp_subject_public_key_info(
-          algorithm: public_key_algorithm(algorithm: @rsaEncryption, parameters: :NULL),
+          algorithm: public_key_algorithm(algorithm: @rsaEncryption),
           subjectPublicKey: public_key
         ),
       extensions: extensions(public_key, hostnames)

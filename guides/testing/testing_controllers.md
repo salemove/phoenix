@@ -1,8 +1,12 @@
 # Testing Controllers
 
-> **Requirement**: This guide expects that you have gone through the [introductory guides](installation.html) and got a Phoenix application [up and running](up_and_running.html).
-
-> **Requirement**: This guide expects that you have gone through the [Introduction to Testing guide](testing.html).
+> ### Requirement {: .tip}
+>
+> This guide expects that you have:
+>
+> * Gone through the [introductory guides](installation.html)
+> * Got a Phoenix application [up and running](up_and_running.html)
+> * Gone through the [Introduction to Testing guide](testing.html)
 
 At the end of the Introduction to Testing guide, we generated an HTML resource for posts using the following command:
 
@@ -20,15 +24,17 @@ If you open up `test/hello_web/controllers/post_controller_test.exs`, you will f
 defmodule HelloWeb.PostControllerTest do
   use HelloWeb.ConnCase
 
-  alias Hello.Blog
+  import Hello.BlogFixtures
 
   @create_attrs %{body: "some body", title: "some title"}
   @update_attrs %{body: "some updated body", title: "some updated title"}
   @invalid_attrs %{body: nil, title: nil}
-
-  def fixture(:post) do
-    {:ok, post} = Blog.create_post(@create_attrs)
-    post
+  
+  describe "index" do
+    test "lists all posts", %{conn: conn} do
+      conn = get(conn, ~p"/posts")
+      assert html_response(conn, 200) =~ "Listing Posts"
+    end
   end
 
   ...
@@ -43,11 +49,11 @@ The first describe block is for the `index` action. The action itself is impleme
 ```elixir
 def index(conn, _params) do
   posts = Blog.list_posts()
-  render(conn, "index.html", posts: posts)
+  render(conn, :index, posts: posts)
 end
 ```
 
-It gets all posts and renders the "index.html" template. The template can be found in `lib/hello_web/templates/page/index.html.heex`.
+It gets all posts and renders the "index.html" template. The template can be found in `lib/hello_web/controllers/post_html/index.html.heex`.
 
 The test looks like this:
 
@@ -75,7 +81,7 @@ def create(conn, %{"post" => post_params}) do
       |> redirect(to: ~p"/posts/#{post}")
 
     {:error, %Ecto.Changeset{} = changeset} ->
-      render(conn, "new.html", changeset: changeset)
+      render(conn, :new, changeset: changeset)
   end
 end
 ```
@@ -91,7 +97,7 @@ describe "create post" do
     assert redirected_to(conn) == ~p"/posts/#{id}"
 
     conn = get(conn, ~p"/posts/#{id}")
-    assert html_response(conn, 200) =~ "Show Post"
+    assert html_response(conn, 200) =~ "Post #{id}"
   end
 
   test "renders errors when data is invalid", %{conn: conn} do
@@ -103,7 +109,7 @@ end
 
 The first test starts with a `post/2` request. That's because once the form in the `/posts/new` page is submitted, it becomes a POST request to the create action. Because we have supplied valid attributes, the post should have been successfully created and we should have redirected to the show action of the new post. This new page will have an address like `/posts/ID`, where ID is the identifier of the post in the database.
 
-We then use `redirected_params(conn)` to get the ID of the post and then match that we indeed redirected to the show action. Finally, we do request a `get` request to the page we redirected to, allowing us to verify that the post was indeed created.
+We then use `redirected_params(conn)` to get the ID of the post and then match that we indeed redirected to the show action. Finally, we do a `get` request to the page we redirected to, allowing us to verify that the post was indeed created.
 
 For the second test, we simply test the failure scenario. If any invalid attribute is given, it should re-render the "New Post" page.
 
@@ -154,6 +160,7 @@ The test is written like this:
     test "deletes chosen post", %{conn: conn, post: post} do
       conn = delete(conn, ~p"/posts/#{post}")
       assert redirected_to(conn) == ~p"/posts"
+
       assert_error_sent 404, fn ->
         get(conn, ~p"/posts/#{post}")
       end
@@ -161,7 +168,7 @@ The test is written like this:
   end
 
   defp create_post(_) do
-    post = fixture(:post)
+    post = post_fixture()
     %{post: post}
   end
 ```
@@ -190,7 +197,7 @@ This pretty much mimics how Phoenix handles exceptions. For example, when we acc
 ```elixir
 def show(conn, %{"id" => id}) do
   post = Blog.get_post!(id)
-  render(conn, "show.html", post: post)
+  render(conn, :show, post: post)
 end
 ```
 
@@ -220,19 +227,19 @@ $ mix phx.gen.json News Article articles title body
 
 We chose a very similar concept to the Blog context <-> Post schema, except we are using a different name, so we can study these concepts in isolation.
 
-After you run the command above, do not forget to follow the final steps output by the generator. Once all is done, we should run `mix test` and now have 33 passing tests:
+After you run the command above, do not forget to follow the final steps output by the generator. Once all is done, we should run `mix test` and now have 35 passing tests:
 
 ```console
 $ mix test
 ................
 
 Finished in 0.6 seconds
-33 tests, 0 failures
+35 tests, 0 failures
 
 Randomized with seed 618478
 ```
 
-You may have noticed that this time the scaffold controller has generated fewer tests. Previously it generated 16 (we went from 3 to 19) and now it generated 14 (we went from 19 to 33). That's because JSON APIs do not need to expose the `new` and `edit` actions. We can see this is the case in the resource we have added to the router at the end of the `mix phx.gen.json` command:
+You may have noticed that this time the scaffold controller has generated fewer tests. Previously it generated 16 (we went from 5 to 21) and now it generated 14 (we went from 21 to 35). That's because JSON APIs do not need to expose the `new` and `edit` actions. We can see this is the case in the resource we have added to the router at the end of the `mix phx.gen.json` command:
 
 ```elixir
 resources "/articles", ArticleController, except: [:new, :edit]
@@ -251,41 +258,42 @@ Open up `test/hello_web/controllers/article_controller_test.exs`. The initial st
 ```elixir
 def index(conn, _params) do
   articles = News.list_articles()
-  render(conn, "index.json", articles: articles)
+  render(conn, :index, articles: articles)
 end
 ```
 
-The action gets all articles and renders `index.json`. Since we are talking about JSON, we don't have a `index.json.eex` template. Instead, the code that converts `articles` into JSON can be found directly in the ArticleView module, defined at `lib/hello_web/views/article_view.ex` like this:
+The action gets all articles and renders the index template. Since we are talking about JSON, we don't have a `index.json.heex` template. Instead, the code that converts `articles` into JSON can be found directly in the ArticleJSON module, defined at `lib/hello_web/controllers/article_json.ex` like this:
 
 ```elixir
-defmodule HelloWeb.ArticleView do
-  use HelloWeb, :view
-  alias HelloWeb.ArticleView
+defmodule HelloWeb.ArticleJSON do
+  alias Hello.News.Article
 
-  def render("index.json", %{articles: articles}) do
-    %{data: render_many(articles, ArticleView, "article.json")}
+  def index(%{articles: articles}) do
+    %{data: for(article <- articles, do: data(article))}
   end
 
-  def render("show.json", %{article: article}) do
-    %{data: render_one(article, ArticleView, "article.json")}
+  def show(%{article: article}) do
+    %{data: data(article)}
   end
 
-  def render("article.json", %{article: article}) do
-    %{id: article.id,
+  defp data(%Article{} = article) do
+    %{
+      id: article.id,
       title: article.title,
-      body: article.body}
+      body: article.body
+    }
   end
 end
 ```
 
-We talked about `render_many` in the [Views and templates guide](views.html). All we need to know for now is that all JSON replies have a "data" key with either a list of posts (for index) or a single post inside of it.
+Since a controller render is a regular function call, we don't need any extra features to render JSON. We simply define functions for our `index` and `show` actions that return the map of JSON for articles.
 
 Let's take a look at the test for the `index` action then:
 
 ```elixir
 describe "index" do
   test "lists all articles", %{conn: conn} do
-    conn = get(conn, ~p"/articles")
+    conn = get(conn, ~p"/api/articles")
     assert json_response(conn, 200)["data"] == []
   end
 end
@@ -304,8 +312,8 @@ def create(conn, %{"article" => article_params}) do
   with {:ok, %Article{} = article} <- News.create_article(article_params) do
     conn
     |> put_status(:created)
-    |> put_resp_header("location", ~p"/articles/#{article}")
-    |> render("show.json", article: article)
+    |> put_resp_header("location", ~p"/api/articles/#{article}")
+    |> render(:show, article: article)
   end
 end
 ```
@@ -315,15 +323,15 @@ As we can see, it checks if an article could be created. If so, it sets the stat
 This is precisely what the first test for the `create` action verifies:
 
 ```elixir
-describe "create" do
+describe "create article" do
   test "renders article when data is valid", %{conn: conn} do
     conn = post(conn, ~p"/articles", article: @create_attrs)
     assert %{"id" => id} = json_response(conn, 201)["data"]
 
-    conn = get(conn, ~p"/articles/#{id}")
+    conn = get(conn, ~p"/api/articles/#{id}")
 
     assert %{
-             "id" => id,
+             "id" => ^id,
              "body" => "some body",
              "title" => "some title"
            } = json_response(conn, 200)["data"]
@@ -332,7 +340,7 @@ describe "create" do
 
 The test uses `post/2` to create a new article and then we verify that the article returned a JSON response, with status 201, and that it had a "data" key in it. We pattern match the "data" on `%{"id" => id}`, which allows us to extract the ID of the new article. Then we perform a `get/2` request on the `show` route and verify that the article was successfully created.
 
-Inside `describe "create"`, we will find another test, which handles the failure scenario. Can you spot the failure scenario in the `create` action? Let's recap it:
+Inside `describe "create article"`, we will find another test, which handles the failure scenario. Can you spot the failure scenario in the `create` action? Let's recap it:
 
 ```elixir
 def create(conn, %{"article" => article_params}) do
@@ -356,14 +364,14 @@ defmodule HelloWeb.FallbackController do
   def call(conn, {:error, %Ecto.Changeset{} = changeset}) do
     conn
     |> put_status(:unprocessable_entity)
-    |> put_view(HelloWeb.ChangesetView)
-    |> render("error.json", changeset: changeset)
+    |> put_view(json: HelloWeb.ChangesetJSON)
+    |> render(:error, changeset: changeset)
   end
 
   def call(conn, {:error, :not_found}) do
     conn
     |> put_status(:not_found)
-    |> put_view(HelloWeb.ErrorView)
+    |> put_view(html: HelloWeb.ErrorHTML, json: HelloWeb.ErrorJSON)
     |> render(:"404")
   end
 end
@@ -375,7 +383,7 @@ With this in mind, let's look at our second test for `create`:
 
 ```elixir
 test "renders errors when data is invalid", %{conn: conn} do
-  conn = post(conn, ~p"/articles", article: @invalid_attrs)
+  conn = post(conn, ~p"/api/articles", article: @invalid_attrs)
   assert json_response(conn, 422)["errors"] != %{}
 end
 ```
@@ -407,17 +415,17 @@ describe "delete article" do
   setup [:create_article]
 
   test "deletes chosen article", %{conn: conn, article: article} do
-    conn = delete(conn, ~p"/articles/#{article}")
+    conn = delete(conn, ~p"/api/articles/#{article}")
     assert response(conn, 204)
 
     assert_error_sent 404, fn ->
-      get(conn, ~p"/articles/#{article}")
+      get(conn, ~p"/api/articles/#{article}")
     end
   end
 end
 
 defp create_article(_) do
-  article = fixture(:article)
+  article = article_fixture()
   %{article: article}
 end
 ```

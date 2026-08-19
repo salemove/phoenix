@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Phx.Gen.Socket do
 
       $ mix phx.gen.socket User
 
-  Accepts the module name for the socket
+  Accepts the module name for the socket.
 
   The generated files will contain:
 
@@ -18,9 +18,9 @@ defmodule Mix.Tasks.Phx.Gen.Socket do
   For an umbrella application:
 
     * a client in `apps/my_app_web/assets/js`
-    * a socket in `apps/my_app_web/lib/app_name_web/channels`
+    * a socket in `apps/my_app_web/lib/my_app_web/channels`
 
-  You can then generated channels with `mix phx.gen.channel`.
+  You can then generate channels with `mix phx.gen.channel`.
   """
   use Mix.Task
 
@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Phx.Gen.Socket do
   def run(args) do
     if Mix.Project.umbrella?() do
       Mix.raise(
-        "mix phx.gen.socket must be invoked from within your *_web application root directory"
+        "mix phx.gen.socket must be invoked from within your *_web application's root directory"
       )
     end
 
@@ -59,8 +59,8 @@ defmodule Mix.Tasks.Phx.Gen.Socket do
     Mix.Phoenix.check_module_name_availability!(binding[:module] <> "Socket")
 
     Mix.Phoenix.copy_from(paths(), "priv/templates/phx.gen.socket", binding, [
-      {:eex, "socket.ex", Path.join(web_prefix, "channels/#{binding[:path]}_socket.ex")},
-      {:eex, "socket.js", "assets/js/#{binding[:path]}_socket.js"}
+      {:eex, "socket.ex.eex", Path.join(web_prefix, "channels/#{binding[:path]}_socket.ex")},
+      {:eex, "socket.js.eex", "assets/js/#{binding[:path]}_socket.js"}
     ])
 
     Mix.shell().info("""

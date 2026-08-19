@@ -1,6 +1,11 @@
 # Directory structure
 
-> **Requirement**: This guide expects that you have gone through the [introductory guides](installation.html) and got a Phoenix application [up and running](up_and_running.html).
+> ### Requirement {: .tip}
+>
+> This guide expects that you have:
+>
+> * Gone through the [introductory guides](installation.html)
+> * Got a Phoenix application [up and running](up_and_running.html)
 
 When we use `mix phx.new` to generate a new Phoenix application, it builds a top-level directory structure like this:
 
@@ -20,7 +25,7 @@ When we use `mix phx.new` to generate a new Phoenix application, it builds a top
 
 We will go over those directories one by one:
 
-  * `_build` - a directory created by the `mix` command line tool that ships as part of Elixir that holds all compilation artifacts. As we have seen in "[Up and Running](up_and_running.html)", `mix` is the main interface to your application. We use Mix to compile our code, create databases, run our server, and more. This directory must not be checked into version control and it can be removed at any time. Removing it will force Mix to rebuild your application from scratch.
+  * `_build` - a directory that holds all compilation artifacts, created by the `mix` command line tool (shipped as part of Elixir). As we have seen in "[Up and Running](up_and_running.html)", `mix` is the main interface to your application. We use Mix to compile our code, create databases, run our server, and more. This directory must not be checked into version control and it can be removed at any time. Removing it will force Mix to rebuild your application from scratch.
 
   * `assets` - a directory that keeps source code for your front-end assets, typically JavaScript and CSS. These sources are automatically bundled by the `esbuild` tool. Static files like images and fonts go in `priv/static`.
 
@@ -28,7 +33,7 @@ We will go over those directories one by one:
 
   * `deps` - a directory with all of our Mix dependencies. You can find all dependencies listed in the `mix.exs` file, inside the `defp deps do` function definition. This directory must not be checked into version control and it can be removed at any time. Removing it will force Mix to download all deps from scratch.
 
-  * `lib` - a directory that holds your application source code. This directory is broken into two subdirectories, `lib/hello` and `lib/hello_web`. The `lib/hello` directory will be responsible to host all of your business logic and business domain. It typically interacts directly with the database - it is the "Model" in Model-View-Controller (MVC) architecture. `lib/hello_web` is responsible for exposing your business domain to the world, in this case, through a web application. It holds both the View and Controller from MVC. We will discuss the contents of these directories with more detail in the next sections.
+  * `lib` - a directory that holds your application source code. This directory is broken into two subdirectories, `lib/hello` and `lib/hello_web`. The `lib/hello` directory is responsible for hosting all of your business logic and business domain. It typically interacts directly with the database - it is the "Model" in Model-View-Controller (MVC) architecture. `lib/hello_web` is responsible for exposing your business domain to the world, in this case, through a web application. It holds both the View and Controller from MVC. We will discuss the contents of these directories in more detail in the next sections.
 
   * `priv` - a directory that keeps all resources that are necessary in production but are not directly part of your source code. You typically keep database scripts, translation files, images, and more in here. Generated assets, created from files in the `assets` directory, are placed in `priv/static/assets` by default.
 
@@ -49,25 +54,18 @@ The `lib/hello/application.ex` file defines an Elixir application named `Hello.A
 
 ```elixir
 children = [
-  # Start the Telemetry supervisor
   HelloWeb.Telemetry,
-  # Start the Ecto repository
   Hello.Repo,
-  # Start the PubSub system
   {Phoenix.PubSub, name: Hello.PubSub},
-  # Start the Endpoint (http/https)
   HelloWeb.Endpoint
-  # Start a worker by calling: Hello.Worker.start_link(arg)
-  # {Hello.Worker, arg}
 ]
 ```
 
 If it is your first time with Phoenix, you don't need to worry about the details right now. For now, suffice it to say our application starts a database repository, a PubSub system for sharing messages across processes and nodes, and the application endpoint, which effectively serves HTTP requests. These services are started in the order they are defined and, whenever shutting down your application, they are stopped in the reverse order.
 
-You can learn more about applications in [Elixir's official docs for Application](https://hexdocs.pm/elixir/Application.html).
+You can learn more about applications in [Elixir's official docs for Application](https://elixir.hexdocs.pm/Application.html).
 
 The `lib/hello/mailer.ex` file holds the `Hello.Mailer` module, which defines the main interface to deliver e-mails:
-
 
 ```elixir
 defmodule Hello.Mailer do
@@ -94,34 +92,32 @@ The `lib/hello_web` directory holds the web-related parts of our application. It
 ```console
 lib/hello_web
 ├── controllers
-│   └── page_controller.ex
-├── templates
-│   ├── layout
-│   │   ├── app.html.heex
-│   │   ├── live.html.heex
-│   │   └── root.html.heex
-│   └── page
-│       └── index.html.heex
-├── views
-│   ├── error_helpers.ex
-│   ├── error_view.ex
-│   ├── layout_view.ex
-│   └── page_view.ex
+│   ├── page_controller.ex
+│   ├── page_html.ex
+│   ├── error_html.ex
+│   ├── error_json.ex
+│   └── page_html
+│       └── home.html.heex
+├── components
+│   ├── core_components.ex
+│   ├── layouts.ex
+│   └── layouts
+│       └── root.html.heex
 ├── endpoint.ex
 ├── gettext.ex
 ├── router.ex
 └── telemetry.ex
 ```
 
-All of the files which are currently in the `controllers`, `templates`, and `views` directories are there to create the "Welcome to Phoenix!" page we saw in the "[Up and running](up_and_running.html)" guide.
+All of the files which are currently in the `controllers` and `components` directories are there to create the "Welcome to Phoenix!" page we saw in the "[Up and running](up_and_running.html)" guide.
 
-By looking at `templates` and `views` directories, we can see Phoenix provides features for handling layouts and error pages out of the box.
+By looking at `controller` and `components` directories, we can see Phoenix provides features for handling layouts, HTML, and error pages out of the box.
 
-Besides the directories mentioned, `lib/hello_web` has four files at its root. `lib/hello_web/endpoint.ex` is the entry-point for HTTP requests. Once the browser accesses [http://localhost:4000](http://localhost:4000), the endpoint starts processing the data, eventually leading to the router, which is defined in `lib/hello_web/router.ex`. The router defines the rules to dispatch requests to "controllers", which then uses "views" and "templates" to render HTML pages back to clients. We explore these layers in length in other guides, starting with the "[Request life-cycle](request_lifecycle.html)" guide coming next.
+Besides the directories mentioned, `lib/hello_web` has four files at its root. `lib/hello_web/endpoint.ex` is the entry-point for HTTP requests. Once the browser accesses [http://localhost:4000](http://localhost:4000), the endpoint starts processing the data, eventually leading to the router, which is defined in `lib/hello_web/router.ex`. The router defines the rules to dispatch requests to "controllers", which calls a view module to render HTML pages back to clients. We explore these layers in length in other guides, starting with the "[Request life-cycle](request_lifecycle.html)" guide coming next.
 
 Through _Telemetry_, Phoenix is able to collect metrics and send monitoring events of your application. The `lib/hello_web/telemetry.ex` file defines the supervisor responsible for managing the telemetry processes. You can find more information on this topic in the [Telemetry guide](telemetry.html).
 
-Finally, there is a `lib/hello_web/gettext.ex` file which provides internationalization through [Gettext](https://hexdocs.pm/gettext/Gettext.html). If you are not worried about internationalization, you can safely skip this file and its contents.
+Finally, there is a `lib/hello_web/gettext.ex` file which provides internationalization through [Gettext](https://gettext.hexdocs.pm/Gettext.html). If you are not worried about internationalization, you can safely skip this file and its contents.
 
 ## The assets directory
 
@@ -129,8 +125,8 @@ The `assets` directory contains source files related to front-end assets, such a
 
 Your other static assets are placed in the `priv/static` folder, where `priv/static/assets` is kept for generated assets. Everything in `priv/static` is served by the `Plug.Static` plug configured in `lib/hello_web/endpoint.ex`.  When running in dev mode (`MIX_ENV=dev`), Phoenix watches for any changes you make in the `assets` directory, and then takes care of updating your front end application in your browser as you work.
 
-Note that when you first create your Phoenix app using `mix phx.new` it is possible to specify options that will affect the presence and layout of the `assets` directory.  In fact, Phoenix apps can bring their own front end tools or not have a front-end at all (handy if you're writing an API for example).  For more information you can run `mix help phx.new` or see the documentation in [Mix tasks](mix_tasks.html).
+Note that when you first create your Phoenix app using `mix phx.new` it is possible to specify options that will affect the presence and layout of the `assets` directory.  In fact, Phoenix apps can bring their own front end tools or not have a front-end at all (handy if you're writing an API for example).  For more information you can run `mix help phx.new`.
 
 If the default esbuild integration does not cover your needs, for example because you want to use another build tool, you can switch to a [custom assets build](asset_management.html#custom_builds).
 
-As for CSS, Phoenix ships with a handful of custom styles as well as the [Milligram CSS Framework](https://milligram.io/), providing a minimal setup for projects. You may move to any CSS framework of your choice. Additional references can be found in the [asset management](asset_management.md#css) guide.
+As for CSS, Phoenix ships with the [Tailwind CSS Framework](https://tailwindcss.com/), providing a base setup for projects. You may move to any CSS framework of your choice. Additional references can be found in the [asset management](asset_management.md#css) guide.

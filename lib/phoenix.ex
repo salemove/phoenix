@@ -2,50 +2,7 @@ defmodule Phoenix do
   @moduledoc """
   This is the documentation for the Phoenix project.
 
-  To get started, see our [overview guides](overview.html).
-  
-  By default, Phoenix applications depend on the following packages
-  across these categories.
-
-  ## General
-
-    * [Ecto](https://hexdocs.pm/ecto) - a language integrated query and
-      database wrapper
-
-    * [ExUnit](https://hexdocs.pm/ex_unit) - Elixir's built-in test framework
-
-    * [Gettext](https://hexdocs.pm/gettext) - Internationalization and
-      localization through [`gettext`](https://www.gnu.org/software/gettext/)
-
-    * [Phoenix](https://hexdocs.pm/phoenix) - the Phoenix web framework
-      (these docs)
-
-    * [Phoenix PubSub](https://hexdocs.pm/phoenix_pubsub) - a distributed
-      pub/sub system with presence support
-
-    * [Phoenix HTML](https://hexdocs.pm/phoenix_html) - conveniences for
-      working with HTML in Phoenix
-
-    * [Phoenix View](https://hexdocs.pm/phoenix_view) - a set of functions
-      for building `Phoenix.View` and working with template languages such
-      as Elixir's own `EEx`
-
-    * [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view) - rich,
-      real-time user experiences with server-rendered HTML
-
-    * [Phoenix LiveDashboard](https://hexdocs.pm/phoenix_live_dashboard) -
-      real-time performance monitoring and debugging tools for Phoenix
-      developers
-
-    * [Plug](https://hexdocs.pm/plug) - a specification and conveniences
-      for composable modules in between web applications
-
-    * [Swoosh](https://hexdocs.pm/swoosh) - a library for composing,
-    delivering and testing emails, also used by `mix phx.gen.auth`
-
-    * [Telemetry Metrics](https://hexdocs.pm/telemetry_metrics) - common
-      interface for defining metrics based on Telemetry events
-
+  To get started, see our [overview guides](overview.md).
   """
   use Application
 
@@ -59,6 +16,10 @@ defmodule Phoenix do
     # Configure proper system flags from Phoenix only
     if stacktrace_depth = Application.get_env(:phoenix, :stacktrace_depth) do
       :erlang.system_flag(:backtrace_depth, stacktrace_depth)
+    end
+
+    if filter = Application.get_env(:phoenix, :filter_parameters) do
+      Application.put_env(:phoenix, :filter_parameters, Phoenix.Logger.compile_filter(filter))
     end
 
     if Application.fetch_env!(:phoenix, :logger) do
@@ -82,6 +43,17 @@ defmodule Phoenix do
 
       config :phoenix, :json_library, AlternativeJsonLibrary
 
+  The configured module is required to provide three functions:
+
+  - **`decode!/1`** — decodes a JSON binary, raising on invalid input
+  - **`encode!/1`** — encodes a term to a JSON binary, raising on encoding errors
+  - **`encode_to_iodata!/1`** — encodes a term to JSON as iodata, raising on
+  encoding errors.
+
+  These correspond to the single-argument, raising variants of
+  the functions provided by Elixir's built-in `JSON` module. A conforming
+  `:json_library` module does not need to implement any other functions
+  `JSON` has, that are not defined above.
   """
   def json_library do
     Application.get_env(:phoenix, :json_library, Jason)
@@ -105,11 +77,11 @@ defmodule Phoenix do
     configured_lib = Application.get_env(:phoenix, :json_library)
 
     if configured_lib && not Code.ensure_loaded?(configured_lib) do
-      IO.warn """
+      IO.warn("""
       found #{inspect(configured_lib)} in your application configuration
       for Phoenix JSON encoding, but module #{inspect(configured_lib)} is not available.
       Ensure #{inspect(configured_lib)} is listed as a dependency in mix.exs.
-      """
+      """)
     end
   end
 end
