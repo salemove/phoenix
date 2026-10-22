@@ -54,7 +54,9 @@ defmodule Mix.Tasks.Phx.NewTest do
       assert_file("phx_blog/config/config.exs", fn file ->
         assert file =~ "ecto_repos: [PhxBlog.Repo]"
         assert file =~ "generators: [timestamp_type: :utc_datetime]"
-        assert file =~ "config :phoenix, :json_library, Jason"
+        assert file =~ "config :phoenix, :json_library, JSON"
+        assert file =~ "config :postgrex, :json_library, JSON"
+        assert file =~ "config :swoosh, :json_library, JSON"
         assert file =~ ~s[cd: Path.expand("../assets", __DIR__),]
         refute file =~ "namespace: PhxBlog"
         refute file =~ "config :phx_blog, :generators"
@@ -78,7 +80,6 @@ defmodule Mix.Tasks.Phx.NewTest do
 
       assert_file("phx_blog/mix.exs", fn file ->
         assert file =~ "mod: {PhxBlog.Application, []}"
-        assert file =~ "{:jason,"
         assert file =~ "{:phoenix_live_dashboard,"
       end)
 
@@ -145,8 +146,8 @@ defmodule Mix.Tasks.Phx.NewTest do
       assert_file("phx_blog/priv/static/images/logo.svg")
 
       assert_file("phx_blog/.gitignore", fn file ->
-        assert file =~ "/priv/static/assets/"
-        assert file =~ "phx_blog-*.tar"
+        assert file =~ "priv/static/assets/"
+        assert file =~ "*.tar"
       end)
 
       assert_file("phx_blog/config/dev.exs", fn file ->
@@ -282,8 +283,8 @@ defmodule Mix.Tasks.Phx.NewTest do
       end)
 
       assert_file("phx_blog/config/prod.exs", fn file ->
-        assert file =~
-                 "config :swoosh, api_client: Swoosh.ApiClient.Req"
+        assert file =~ "config :swoosh, :api_client, Swoosh.ApiClient.Req"
+        assert file =~ "config :swoosh, :local, false"
       end)
 
       # Install dependencies?
@@ -321,11 +322,7 @@ defmodule Mix.Tasks.Phx.NewTest do
       ])
 
       # No assets
-      assert_file("phx_blog/.gitignore", fn file ->
-        refute file =~ "/priv/static/assets/"
-      end)
-
-      refute File.exists?("phx_blog/priv/static/images/logo.svg")
+      refute_file("phx_blog/priv/static/images/logo.svg")
 
       assert_file("phx_blog/config/dev.exs", ~r/watchers: \[\]/)
 
@@ -355,6 +352,9 @@ defmodule Mix.Tasks.Phx.NewTest do
       assert_file("phx_blog/mix.exs", &refute(&1 =~ ~r":phoenix_ecto"))
 
       assert_file("phx_blog/config/config.exs", fn file ->
+        assert file =~ "config :phoenix, :json_library, JSON"
+        refute file =~ "config :postgrex, :json_library, JSON"
+        refute file =~ "config :swoosh, :json_library, JSON"
         refute file =~ "config :esbuild"
         refute file =~ "config :phx_blog, :generators"
         refute file =~ "ecto_repos:"
@@ -525,10 +525,6 @@ defmodule Mix.Tasks.Phx.NewTest do
     in_tmp("new no_assets", fn ->
       Mix.Tasks.Phx.New.run([@app_name, "--no-assets"])
 
-      assert_file("phx_blog/.gitignore", fn file ->
-        refute file =~ "/priv/static/assets/"
-      end)
-
       assert_file("phx_blog/priv/static/assets/css/app.css")
       assert_file("phx_blog/priv/static/assets/js/app.js")
       assert_file("phx_blog/priv/static/favicon.ico")
@@ -552,6 +548,12 @@ defmodule Mix.Tasks.Phx.NewTest do
         assert file =~ "plugins: [Phoenix.LiveView.HTMLFormatter]"
         assert file =~ "inputs: [\"*.{heex,ex,exs}\", \"{config,lib,test}/**/*.{heex,ex,exs}\"]"
         refute file =~ "subdirectories:"
+      end)
+
+      assert_file("phx_blog/config/config.exs", fn file ->
+        assert file =~ "config :phoenix, :json_library, JSON"
+        refute file =~ "config :postgrex, :json_library, JSON"
+        assert file =~ "config :swoosh, :json_library, JSON"
       end)
 
       assert_file("phx_blog/test/phx_blog_web/controllers/error_html_test.exs", "async: true")
@@ -673,6 +675,7 @@ defmodule Mix.Tasks.Phx.NewTest do
       Mix.Tasks.Phx.New.run([project_path, "--database", "mysql"])
 
       assert_file("custom_path/mix.exs", ":myxql")
+      assert_file("custom_path/config/config.exs", "config :myxql, :json_library, JSON")
       assert_file("custom_path/config/dev.exs", [~r/username: "root"/, ~r/password: ""/])
       assert_file("custom_path/config/test.exs", [~r/username: "root"/, ~r/password: ""/])
       assert_file("custom_path/config/runtime.exs", [~r/url: database_url/])
@@ -701,6 +704,7 @@ defmodule Mix.Tasks.Phx.NewTest do
       Mix.Tasks.Phx.New.run([project_path, "--database", "sqlite3"])
 
       assert_file("custom_path/mix.exs", ":ecto_sqlite3")
+      assert_file("custom_path/config/config.exs", "config :ecto_sqlite3, :json_library, JSON")
       assert_file("custom_path/config/dev.exs", [~r/database: .*_dev.db/])
       assert_file("custom_path/config/test.exs", [~r/database: .*_test.db/])
       assert_file("custom_path/config/runtime.exs", [~r/database: database_path/])
@@ -743,6 +747,7 @@ defmodule Mix.Tasks.Phx.NewTest do
       Mix.Tasks.Phx.New.run([project_path, "--database", "mssql"])
 
       assert_file("custom_path/mix.exs", ":tds")
+      assert_file("custom_path/config/config.exs", "config :tds, :json_library, JSON")
 
       assert_file("custom_path/config/dev.exs", [
         ~r/username: "sa"/,
