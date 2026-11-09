@@ -970,6 +970,8 @@ defmodule Phoenix.Controller do
     |> render(template, assigns)
   end
 
+  # The body is a rendered template. Templates escape their dynamic values.
+  # sobelow_skip ["XSS.SendResp"]
   defp render_and_send(conn, format, template, assigns) do
     view = view_module(conn, format)
     conn = prepare_assigns(conn, assigns, template, format)
@@ -1086,6 +1088,9 @@ defmodule Phoenix.Controller do
     end
   end
 
+  # Used by text/2, html/2 and json/2. The application passes the body, as with
+  # Plug.Conn.send_resp/3, and each function sets the matching content type.
+  # sobelow_skip ["XSS.SendResp"]
   defp send_resp(conn, default_status, default_content_type, body) do
     conn
     |> ensure_resp_content_type(default_content_type)
@@ -1237,6 +1242,9 @@ defmodule Phoenix.Controller do
   """
   def send_download(conn, kind, opts \\ [])
 
+  # send_download/3 is a framework API. The application passes the path and must
+  # not build it from user input, as with Plug.Conn.send_file/5.
+  # sobelow_skip ["Traversal.SendFile"]
   def send_download(conn, {:file, path}, opts) do
     filename = opts[:filename] || Path.basename(path)
     offset = opts[:offset] || 0
@@ -1247,6 +1255,9 @@ defmodule Phoenix.Controller do
     |> send_file(conn.status || 200, path, offset, length)
   end
 
+  # send_download/3 is a framework API. The application passes the contents, the file
+  # name and the content type, as with Plug.Conn.send_resp/3.
+  # sobelow_skip ["XSS.SendResp"]
   def send_download(conn, {:binary, contents}, opts) do
     filename =
       opts[:filename] || raise ":filename option is required when sending binary download"
@@ -1256,6 +1267,8 @@ defmodule Phoenix.Controller do
     |> send_resp(conn.status || 200, contents)
   end
 
+  # The application passes the content type. When it is missing, it comes from the file name.
+  # sobelow_skip ["XSS.ContentType"]
   defp prepare_send_download(conn, filename, opts) do
     content_type = opts[:content_type] || MIME.from_path(filename)
     encoded_filename = encode_filename(filename, Keyword.get(opts, :encode, true))

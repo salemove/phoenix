@@ -1,0 +1,24 @@
+# Phoenix is a framework. Its inputs are the developer's code and config, not request data.
+# DOS.BinToAtom:        atoms are built at compile time from route, controller and module names.
+# DOS.StringToAtom:     atoms come from route path param names, generator CLI arguments and
+#                       module file names. None comes from request values.
+# RCE.EEx:              EEx runs only generator templates from priv/templates of Phoenix or of
+#                       the app, when a developer runs mix phx.gen.*.
+# Traversal.FileModule: File calls work on paths from config, build output and generator
+#                       arguments. Request paths never reach them.
+# Config.HTTPS:         kept as the Glia standard asks. Phoenix is a library, so TLS is set
+#                       by the application that uses it.
+# XSS.SendResp, Traversal.SendFile, XSS.ContentType, CI.System: handled with annotations
+#                       next to each call, each with a reason.
+[
+  skip: true,
+  private: true,
+  router: :none,
+  ignore: [
+    "Config.HTTPS",
+    "DOS.BinToAtom",
+    "DOS.StringToAtom",
+    "RCE.EEx",
+    "Traversal.FileModule"
+  ]
+]

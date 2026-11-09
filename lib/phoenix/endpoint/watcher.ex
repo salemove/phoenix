@@ -28,6 +28,8 @@ defmodule Phoenix.Endpoint.Watcher do
     end
   end
 
+  # The command and arguments come from the endpoint's :watchers config.
+  # sobelow_skip ["CI.System"]
   def watch(cmd, args) when is_list(args) do
     {args, opts} = Enum.split_while(args, &is_binary(&1))
     opts = Keyword.merge([into: IO.stream(:stdio, :line), stderr_to_stdout: true], opts)
