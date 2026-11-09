@@ -109,6 +109,8 @@ defmodule Phoenix.CodeReloader do
   @doc """
   API used by Plug to invoke the code reloader on every request.
   """
+  # Dev only. The body is a fixed page with the compiler output, which is HTML-escaped.
+  # sobelow_skip ["XSS.SendResp"]
   def call(conn, opts) do
     case opts[:reloader].(conn.private.phoenix_endpoint, opts) do
       :ok ->

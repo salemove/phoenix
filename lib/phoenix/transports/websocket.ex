@@ -36,6 +36,9 @@ defmodule Phoenix.Transports.WebSocket do
 
   def init(opts), do: opts
 
+  # The only body is an upgrade error message. It can repeat the upgrade
+  # headers, which a browser does not let a page set.
+  # sobelow_skip ["XSS.SendResp"]
   def call(%{method: "GET"} = conn, {endpoint, handler, opts}) do
     subprotocols =
       if opts[:auth_token] do

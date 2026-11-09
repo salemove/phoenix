@@ -294,6 +294,8 @@ defmodule Phoenix.Transports.LongPoll do
     send_json(conn, %{"status" => conn.status || 200, "token" => token, "messages" => messages})
   end
 
+  # The body is JSON encoded and sent as application/json.
+  # sobelow_skip ["XSS.SendResp"]
   defp send_json(conn, data) do
     conn
     |> put_resp_header("content-type", "application/json; charset=utf-8")

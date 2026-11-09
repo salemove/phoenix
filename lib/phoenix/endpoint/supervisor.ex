@@ -454,6 +454,8 @@ defmodule Phoenix.Endpoint.Supervisor do
     end
   end
 
+  # The command is chosen by the operating system. The only argument is the endpoint URL from config.
+  # sobelow_skip ["CI.System"]
   defp browser_open(endpoint, conf) do
     if Application.get_env(:phoenix, :browser_open, false) && server?(conf) do
       url = endpoint.url()
